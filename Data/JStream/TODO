@@ -1,0 +1,3 @@
+- Dodelat podporu pro unicode znaky
+- Predelat funkce, aby pri moredata nemusely delat concat
+- Parsovani desetinneho cisla
