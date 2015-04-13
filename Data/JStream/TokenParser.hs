@@ -36,7 +36,7 @@ ident name el input
 moredata :: BS.ByteString -> (BS.ByteString -> TokParseResult) -> TokParseResult
 moredata bl p = TokMoreData (p . BS.append bl)
 
-parseSpecChar :: BS.ByteString -> BS.ByteString -> TokParseResult
+parseSpecChar :: [BS.ByteString] -> BS.ByteString -> TokParseResult
 parseSpecChar start bl
   | BS.null bl = moredata "" (parseSpecChar start)
   | chr == '"' = slashchr '"'
@@ -51,7 +51,7 @@ parseSpecChar start bl
   | otherwise = TokFailed
   where
     chr = BS.head bl
-    slashchr c = parseString (start `BS.append` BS.singleton c) (BS.tail bl)
+    slashchr c = parseString (BS.singleton c:start) (BS.tail bl)
 
 chooseKeyOrValue :: T.Text -> BS.ByteString -> TokParseResult
 chooseKeyOrValue text bl
@@ -63,12 +63,12 @@ chooseKeyOrValue text bl
 
 
 -- | Naparsuje string, ale po ukonceni stringu pocka, jestli neni ':', pak by to byl klic
-parseString :: BS.ByteString -> BS.ByteString -> TokParseResult
+parseString :: [BS.ByteString] -> BS.ByteString -> TokParseResult
 parseString start bl
   | BS.null bl = moredata "" (parseString start)
-  | chr == '"' = chooseKeyOrValue (decodeUtf8 start) (BS.tail bl)
+  | chr == '"' = chooseKeyOrValue (decodeUtf8 $ BS.concat $ reverse start) (BS.tail bl)
   | chr == '\\' = parseSpecChar start (BS.tail bl)
-  | otherwise = parseString (BS.append start cont) rest
+  | otherwise = parseString (cont:start) rest
   where
     chr = BS.head bl
     (cont, rest) = BS.break (\c -> c == '"' || c == '\\' ) bl
@@ -86,7 +86,7 @@ tokenParser bl
         let (start, rest) = BS.span isDigit bl
         in if | BS.null rest -> moredata bl tokenParser
               | otherwise -> PartialResult (JNumber $ read (BS.unpack start)) (tokenParser rest)
-  | chr == '"' = parseString BS.empty (BS.tail bl)
+  | chr == '"' = parseString [] (BS.tail bl)
   | Just res <- ident "true" (JBool True) bl = res
   | Just res <- ident "false" (JBool False) bl = res
   | Just res <- ident "null" JNull bl = res
