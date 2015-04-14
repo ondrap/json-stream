@@ -3,7 +3,8 @@
 
 module Data.JStream.TokenParser (
     Element(..)
-  , TokParseResult(..)
+  , JValue(..)
+  , TokenParser(..)
   , tokenParser
 ) where
 
@@ -12,31 +13,33 @@ import           Data.Char             (isDigit, isDigit, isSpace)
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8)
 
+data JValue = JString T.Text | JNumber Int | JBool Bool | JNull deriving (Show)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
-               | ArrayKey T.Text
-               | JString T.Text | JNumber Int | JBool Bool | JNull
+               | ArrayKey T.Text | JValue JValue
                deriving (Show)
 
-data TokParseResult =  TokMoreData (BS.ByteString -> TokParseResult)
-                      | PartialResult Element TokParseResult
+data TokenParser =  TokMoreData (BS.ByteString -> TokenParser)
+                      | PartialResult Element TokenParser BS.ByteString -- ^ found element, continuation, unparsed data
                       | TokFailed
 
 isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
 
-ident :: BS.ByteString -> Element -> BS.ByteString -> Maybe TokParseResult
+ident :: BS.ByteString -> Element -> BS.ByteString -> Maybe TokenParser
 ident name el input
   | BS.length name < BS.length input =
       if name `BS.isPrefixOf` input && isBreakChar (BS.index input (BS.length name))
-        then Just $ PartialResult el (tokenParser (BS.drop (BS.length name) input))
+        then Just $ PartialResult el (tokenParser rest) rest
         else Nothing
   | otherwise = Just $ moredata input tokenParser
+  where
+    rest = BS.drop (BS.length name) input
 
-moredata :: BS.ByteString -> (BS.ByteString -> TokParseResult) -> TokParseResult
+moredata :: BS.ByteString -> (BS.ByteString -> TokenParser) -> TokenParser
 moredata bl p = TokMoreData (p . BS.append bl)
 
-parseSpecChar :: [BS.ByteString] -> BS.ByteString -> TokParseResult
+parseSpecChar :: [BS.ByteString] -> BS.ByteString -> TokenParser
 parseSpecChar start bl
   | BS.null bl = moredata "" (parseSpecChar start)
   | chr == '"' = slashchr '"'
@@ -53,17 +56,17 @@ parseSpecChar start bl
     chr = BS.head bl
     slashchr c = parseString (BS.singleton c:start) (BS.tail bl)
 
-chooseKeyOrValue :: T.Text -> BS.ByteString -> TokParseResult
+chooseKeyOrValue :: T.Text -> BS.ByteString -> TokenParser
 chooseKeyOrValue text bl
   | BS.null bl = moredata "" (chooseKeyOrValue text)
-  | chr == ':' = PartialResult (ArrayKey text) (tokenParser $ BS.tail bl)
-  | otherwise = PartialResult (JString text) (tokenParser bl)
+  | chr == ':' = PartialResult (ArrayKey text) (tokenParser $ BS.tail bl) (BS.tail bl)
+  | otherwise = PartialResult (JValue $ JString text) (tokenParser bl) bl
   where
     chr = BS.head bl
 
 
 -- | Naparsuje string, ale po ukonceni stringu pocka, jestli neni ':', pak by to byl klic
-parseString :: [BS.ByteString] -> BS.ByteString -> TokParseResult
+parseString :: [BS.ByteString] -> BS.ByteString -> TokenParser
 parseString start bl
   | BS.null bl = moredata "" (parseString start)
   | chr == '"' = chooseKeyOrValue (decodeUtf8 $ BS.concat $ reverse start) (BS.tail bl)
@@ -73,7 +76,7 @@ parseString start bl
     chr = BS.head bl
     (cont, rest) = BS.break (\c -> c == '"' || c == '\\' ) bl
 
-tokenParser :: BS.ByteString -> TokParseResult
+tokenParser :: BS.ByteString -> TokenParser
 tokenParser bl
   | BS.null bl = moredata "" tokenParser
   | isSpace chr = tokenParser (BS.dropWhile isSpace bl)
@@ -85,12 +88,12 @@ tokenParser bl
   | isDigit chr =
         let (start, rest) = BS.span isDigit bl
         in if | BS.null rest -> moredata bl tokenParser
-              | otherwise -> PartialResult (JNumber $ read (BS.unpack start)) (tokenParser rest)
+              | otherwise -> PartialResult (JValue $ JNumber $ read (BS.unpack start)) (tokenParser rest) rest
   | chr == '"' = parseString [] (BS.tail bl)
-  | Just res <- ident "true" (JBool True) bl = res
-  | Just res <- ident "false" (JBool False) bl = res
-  | Just res <- ident "null" JNull bl = res
+  | Just res <- ident "true" (JValue $ JBool True) bl = res
+  | Just res <- ident "false" (JValue $ JBool False) bl = res
+  | Just res <- ident "null" (JValue JNull) bl = res
   | otherwise = TokFailed
   where
     chr = BS.head bl
-    partres elm = PartialResult elm (tokenParser $ BS.tail bl)
+    partres elm = PartialResult elm (tokenParser $ BS.tail bl) (BS.tail bl)
