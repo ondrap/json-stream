@@ -1,4 +1,3 @@
-{-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 
@@ -54,9 +53,9 @@ instance Applicative Parser where
           processParam' (Unexpected el ntok) acc = (Unexpected el ntok, acc)
           processParam' (Yield v np) acc = processParam' np (v:acc)
 
--- instance Alternative Parser where
---   empty = undefined
---   (<|>) m1 m2 = undefined
+instance Alternative Parser where
+  empty = ignoreVal
+  (<|>) m1 m2 = undefined
 
 
 newtype Parser a = Parser {
@@ -93,16 +92,19 @@ object' valparse = Parser $ \tp ->
     objcontent (Unexpected ObjectEnd ntp) = Done ntp
     objcontent (Unexpected el _) = Failed ("Object - unexpected: " ++ show el)
 
-object :: Parser a -> Parser (T.Text, a)
-object valparse = object' $ Parser keyValue_'
+objectItems :: Parser a -> Parser (T.Text, a)
+objectItems valparse = object' $ Parser keyValue_'
   where
     keyValue_' (TokFailed _) = Failed "KeyValue - token failed"
     keyValue_' (TokMoreData ntok _) = MoreData (Parser keyValue_', ntok)
     keyValue_' (PartialResult (ObjectKey key) ntok _) = (key,) <$> callParse valparse ntok
     keyValue_' (PartialResult el ntok _) = Unexpected el ntok
 
+objectValues :: Parser a -> Parser a
+objectValues valparse = snd <$> objectItems valparse
+
 objectKey :: T.Text -> Parser a -> Parser a
-objectKey name valparse = Parser $ \tok -> filterKey $ callParse (object valparse) tok
+objectKey name valparse = Parser $ \tok -> filterKey $ callParse (objectItems valparse) tok
   where
     filterKey :: ParseResult (T.Text, a) -> ParseResult a
     filterKey (Done ntp) = Done ntp
@@ -121,7 +123,7 @@ value = Parser value'
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) = JArray <$> callParse (getYields (array value)) tok
-    value' tok@(PartialResult ObjectBegin _ _) = JObject <$> callParse (getYields (object value)) tok
+    value' tok@(PartialResult ObjectBegin _ _) = JObject <$> callParse (getYields (objectItems value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
 
 -- | Continue parsing, thus skipping any value.
@@ -168,7 +170,7 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = array (object $ (,) <$> (objectKey "1" value) <*> (objectKey "2" value))
+testParser = array (objectItems $ (,) <$> (objectKey "1" value) <*> (objectKey "2" value))
 -- testParser = array (value)
 
 main :: IO ()
