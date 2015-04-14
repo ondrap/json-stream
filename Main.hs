@@ -10,27 +10,55 @@ import qualified Data.Text                as T
 import           Data.JStream.TokenParser
 
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenParser)
-                | Failed String
-                | Done TokenParser
-                | Yield v (ParseResult v)
-                | Unexpected Element TokenParser
+                    | Failed String
+                    | Done TokenParser
+                    | Yield v (ParseResult v)
+                    | Unexpected Element TokenParser
 
 
 instance Functor ParseResult where
   fmap f (MoreData (np, ntok)) = MoreData (fmap f np, ntok)
   fmap _ (Failed err) = Failed err
-  fmap _ (Done tp) = Done tp
+  fmap _ (Done tok) = Done tok
   fmap f (Yield v np) = Yield (f v) (fmap f np)
-  fmap _ (Unexpected el tp) = Unexpected el tp
+  fmap _ (Unexpected el tok) = Unexpected el tok
 
 instance Functor Parser where
   fmap f (Parser p) = Parser $ \d -> fmap f (p d)
 
 instance Applicative Parser where
   pure x = Parser $ \tok -> Yield x (callParse ignoreVal tok)
-  -- (<*>) m1 m2 = Parser $ \tok ->
-  --
-  --     where
+  -- | Run both parsers in parallel using a shared token parsen, combine results
+  (<*>) m1 m2 = Parser (process (m1, []) (m2, []))
+    where
+      process (dm1,lst1) (dm2,lst2) tok =
+        let (m1p, m1lst) = processParam dm1 lst1 tok
+            (m2p, m2lst) = processParam dm2 lst2 tok
+        in
+          case (m1p, m2p) of
+            (MoreData (np1, ntok1), MoreData (np2, _)) ->
+                MoreData (Parser (process (np1, m1lst) (np2, m2lst)), ntok1)
+            (Done ntok, Done _) -> yieldResults [ mx my | mx <- m1lst, my <- m2lst ] (Done ntok)
+            (Unexpected el ntok, Unexpected _ _) ->
+                  yieldResults [ mx my | mx <- m1lst, my <- m2lst ] (Unexpected el ntok)
+            (Failed err, _) -> Failed err
+            (_, Failed err) -> Failed err
+            (_, _) -> Failed "Unexpected error in parallel processing."
+      yieldResults [] end = end
+      yieldResults (fst:rest) end = Yield fst (yieldResults rest end)
+
+      processParam :: Parser a -> [a] -> TokenParser -> (ParseResult a, [a])
+      processParam p acc' tok = processParam' (callParse p tok) acc'
+        where
+          processParam' (Failed err) acc = (Failed err, acc)
+          processParam' (Done ntok) acc = (Done ntok, acc)
+          processParam' (MoreData np) acc = (MoreData np, acc)
+          processParam' (Unexpected el ntok) acc = (Unexpected el ntok, acc)
+          processParam' (Yield v np) acc = processParam' np (v:acc)
+
+-- instance Alternative Parser where
+--   empty = undefined
+--   (<|>) m1 m2 = undefined
 
 
 newtype Parser a = Parser {
@@ -146,12 +174,12 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = object (objKey "ondra" (pure "test"))
+testParser = array ((,) <$> object (objKey "ondra" value) <*> object (objKey "martin" value))
 
 main :: IO ()
 main = do
   -- let test = ["[1,2", "2,3,\"", "ond\\\"ra\"","t", "rue,fal", "se,[null]", "{\"ondra\":\"martin\", \"x\":5}", "]"]
   -- let test = ["[[1, 2], [3, 4 ], [5, \"ondra\", true, false, null] ] "]
-  let test = ["{\"ondra\":12, \"ma", "rtin\":true}   \"a "]
+  let test = ["[{\"ondra\":12, \"martin\":true}, {\"ondra\":13, \"mardtin\":false}]"]
   execIt test testParser
   return ()
