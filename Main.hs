@@ -9,7 +9,7 @@ import qualified Data.Text                as T
 
 import           Data.JStream.TokenParser
 
-data ParseResult v =  MoreData (BS.ByteString -> ParseResult v)
+data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenParser)
                 | Failed String
                 | Done TokenParser
                 | Yield v (ParseResult v)
@@ -17,7 +17,7 @@ data ParseResult v =  MoreData (BS.ByteString -> ParseResult v)
 
 
 instance Functor ParseResult where
-  fmap f (MoreData np) = MoreData (fmap f . np)
+  fmap f (MoreData (np, ntok)) = MoreData (fmap f np, ntok)
   fmap _ (Failed err) = Failed err
   fmap _ (Done tp) = Done tp
   fmap f (Yield v np) = Yield (f v) (fmap f np)
@@ -28,7 +28,10 @@ instance Functor Parser where
 
 instance Applicative Parser where
   pure x = Parser $ \tok -> Yield x (callParse ignoreVal tok)
-  (<*>) m marg = undefined
+  -- (<*>) m1 m2 = Parser $ \tok ->
+  --
+  --     where
+
 
 newtype Parser a = Parser {
     callParse :: TokenParser -> ParseResult a
@@ -44,11 +47,11 @@ array valparse = Parser $ \tp ->
   case tp of
     (PartialResult ArrayBegin ntp _) -> arrcontent (callParse valparse ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
-    (TokMoreData ntok _) -> MoreData (callParse (array valparse) . ntok)
+    (TokMoreData ntok _) -> MoreData (array valparse, ntok)
     (TokFailed _) -> Failed "Array - token failed"
   where
     arrcontent (Done ntp) = arrcontent (callParse valparse ntp) -- Reset to next value
-    arrcontent (MoreData np) = MoreData (arrcontent . np)
+    arrcontent (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent . np), ntp)
     arrcontent (Yield v np) = Yield v (arrcontent np)
     arrcontent (Failed err) = Failed err
     arrcontent (Unexpected ArrayEnd ntp) = Done ntp
@@ -59,11 +62,11 @@ object valparse = Parser $ \tp ->
   case tp of
     (PartialResult ObjectBegin ntp _) -> objcontent (callParse (callKeyParse valparse) ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
-    (TokMoreData ntok _) -> MoreData (callParse (object valparse) . ntok)
+    (TokMoreData ntok _) -> MoreData (object valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
     objcontent (Done ntp) = objcontent (callParse (callKeyParse valparse) ntp) -- Reset to next value
-    objcontent (MoreData np) = MoreData (objcontent . np)
+    objcontent (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent . np), ntok)
     objcontent (Yield v np) = Yield v (objcontent np)
     objcontent (Failed err) = Failed err
     objcontent (Unexpected ObjectEnd ntp) = Done ntp
@@ -73,7 +76,7 @@ keyValue :: Parser a -> KeyParser (T.Text, a)
 keyValue valparse = KeyParser $ Parser $ keyValue_'
   where
     keyValue_' (TokFailed _) = Failed "KeyValue - token failed"
-    keyValue_' (TokMoreData ntok _) = MoreData (keyValue_' . ntok)
+    keyValue_' (TokMoreData ntok _) = MoreData (Parser keyValue_', ntok)
     keyValue_' (PartialResult (ObjectKey key) ntok _) = (key,) <$> callParse valparse ntok
     keyValue_' (PartialResult el ntok _) = Unexpected el ntok
 
@@ -82,7 +85,7 @@ objKey name valparse = KeyParser $ Parser $ \tok -> filterKey $ callParse (callK
   where
     filterKey :: ParseResult (T.Text, a) -> ParseResult a
     filterKey (Done ntp) = Done ntp
-    filterKey (MoreData np) = MoreData (filterKey . np)
+    filterKey (MoreData (Parser np, ntok)) = MoreData (Parser (filterKey . np), ntok)
     filterKey (Yield (ykey, v) np)
       | ykey == name = Yield v (filterKey np)
       | otherwise = filterKey np
@@ -94,7 +97,7 @@ value :: Parser JValue
 value = Parser value'
   where
     value' (TokFailed _) = Failed "Value - token failed"
-    value' (TokMoreData ntok _) = MoreData (value' . ntok)
+    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) = JArray <$> callParse (getYields (array value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
@@ -105,7 +108,7 @@ ignoreVal = Parser $ handleTok 0
   where
     handleTok :: Int -> TokenParser -> ParseResult a
     handleTok _ (TokFailed _) = Failed "Token error"
-    handleTok level (TokMoreData ntok _) = MoreData (handleTok level . ntok)
+    handleTok level (TokMoreData ntok _) = MoreData (Parser (handleTok level), ntok)
 
     handleTok 0 (PartialResult (JValue _) ntok _) = Done ntok
     handleTok 0 (PartialResult (ObjectKey _) ntok _) = Done ntok
@@ -124,7 +127,7 @@ getYields :: Parser a -> Parser [a]
 getYields f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
     loop acc (Done ntp) = Yield (reverse acc) (Done ntp)
-    loop acc (MoreData np) = MoreData (loop acc . np)
+    loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
     loop acc (Yield v np) = loop (v:acc) np
     loop _ (Failed err) = Failed err
     loop _ (Unexpected el _) = Failed ("getYields - unexpected: " ++ show el)
@@ -137,14 +140,13 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
     loop _ (Done (PartialResult _ _ rest)) = putStrLn $ "Done: "  ++ show rest
     loop _ (Done (TokFailed rest)) = putStrLn $ "Done: " ++ show rest
     loop _ (Done (TokMoreData _ bl)) = putStrLn $ "Done md - more data: " ++ show bl
-    loop (dta:rest) (MoreData np) =
-        loop rest $ np dta
+    loop (dta:rest) (MoreData (Parser np, ntok)) = loop rest $ np (ntok dta)
     loop dta (Yield item np) = do
         putStrLn $ "Got: " ++ show item
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = object (objKey "ondra" value)
+testParser = object (objKey "ondra" (pure "test"))
 
 main :: IO ()
 main = do
