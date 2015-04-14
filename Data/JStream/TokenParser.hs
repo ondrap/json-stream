@@ -17,7 +17,7 @@ data JValue = JString T.Text | JNumber Int | JBool Bool | JNull
               | JArray [JValue] | JObject [(T.Text, JValue)] deriving (Show)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
-               | ArrayKey T.Text | JValue JValue
+               | ObjectKey T.Text | JValue JValue
                deriving (Show)
 
 data TokenParser =  TokMoreData (BS.ByteString -> TokenParser)
@@ -60,7 +60,7 @@ parseSpecChar start bl
 chooseKeyOrValue :: T.Text -> BS.ByteString -> TokenParser
 chooseKeyOrValue text bl
   | BS.null bl = moredata "" (chooseKeyOrValue text)
-  | chr == ':' = PartialResult (ArrayKey text) (tokenParser $ BS.tail bl) (BS.tail bl)
+  | chr == ':' = PartialResult (ObjectKey text) (tokenParser $ BS.tail bl) (BS.tail bl)
   | otherwise = PartialResult (JValue $ JString text) (tokenParser bl) bl
   where
     chr = BS.head bl
