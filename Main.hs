@@ -55,6 +55,7 @@ instance Applicative Parser where
 
 instance Alternative Parser where
   empty = ignoreVal
+  -- | Run both parsers in parallel yielding from both as the data comes
   (<|>) m1 m2 = undefined
 
 
@@ -104,16 +105,14 @@ objectValues :: Parser a -> Parser a
 objectValues valparse = snd <$> objectItems valparse
 
 objectKey :: T.Text -> Parser a -> Parser a
-objectKey name valparse = Parser $ \tok -> filterKey $ callParse (objectItems valparse) tok
+objectKey name valparse = object' $ Parser filterKey'
   where
-    filterKey :: ParseResult (T.Text, a) -> ParseResult a
-    filterKey (Done ntp) = Done ntp
-    filterKey (MoreData (Parser np, ntok)) = MoreData (Parser (filterKey . np), ntok)
-    filterKey (Yield (ykey, v) np)
-      | ykey == name = Yield v (filterKey np)
-      | otherwise = filterKey np
-    filterKey (Failed err) = Failed err
-    filterKey (Unexpected el ntp) = Unexpected el ntp
+    filterKey' (TokFailed _) = Failed "KeyValue - token failed"
+    filterKey' (TokMoreData ntok _) = MoreData (Parser filterKey', ntok)
+    filterKey' (PartialResult (ObjectKey key) ntok _)
+      | key == name = callParse valparse ntok
+      | otherwise = callParse ignoreVal ntok
+    filterKey' (PartialResult el ntok _) = Unexpected el ntok
 
 -- | Parses underlying values and generates a JValue
 value :: Parser JValue
@@ -170,14 +169,11 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = array (objectItems $ (,) <$> (objectKey "1" value) <*> (objectKey "2" value))
--- testParser = array (value)
+testParser = array (objectKey "ondra" $ objectKey "1" value)
+-- testParser = (,) <$> array value <*> array value
 
 main :: IO ()
 main = do
-  -- let test = ["[1,2", "2,3,\"", "ond\\\"ra\"","t", "rue,fal", "se,[null]", "{\"ondra\":\"martin\", \"x\":5}", "]"]
-  -- let test = ["[[1, 2], [3, 4 ], [5, \"ondra\", true, false, null] ] "]
---  let test = ["[{\"ondra\":{\"1\":1, \"2\":2}, \"martin\":{\"1\":3, \"2\":4}}, {\"ondra\":13, \"mardtin\":false}]"]
-  let test = ["[{\"ondra\":{\"1\":5, \"2\":1}, \"martin\":{\"1\":3, \"2\":4}}, {\"onddra\":13, \"mardtin\":false}]"]
+  let test = ["[{\"ondra\":{\"1\":13}}, {\"martin\":12}]"]
   execIt test testParser
   return ()

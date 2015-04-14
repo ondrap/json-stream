@@ -1,3 +1,6 @@
+- objectKey, arrayIndex - nesmi parsovat Values toho, co se jich netyka
+- Alternative parser
+
 - Dodelat podporu pro unicode znaky
 - Predelat funkce, aby pri moredata nemusely delat concat
 - Parsovani desetinneho cisla, negativni cislo
