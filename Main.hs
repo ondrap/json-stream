@@ -3,6 +3,7 @@
 
 import qualified Data.ByteString.Char8 as BS
 import Control.Applicative
+import Data.List (foldl')
 
 import Data.JStream.TokenParser
 
@@ -42,11 +43,23 @@ array valparse tp =
     arrcontent (Unexpected ArrayEnd ntp) = Done ntp
     arrcontent (Unexpected _ _) = Failed
 
+-- | Parses underlying values and generates a JValue
 value :: Parser JValue
 value TokFailed = Failed
 value (TokMoreData ntok) = MoreData (value . ntok)
 value (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
+value tok@(PartialResult ArrayBegin _ _) = JArray <$> getYields (array value) tok
 value (PartialResult el ntok _) = Unexpected el ntok
+
+-- | Fetch yields of a function and return them as list
+getYields :: Parser a -> Parser [a]
+getYields f ntok = loop [] (f ntok)
+  where
+    loop acc (Done ntp) = Yield (reverse acc) (Done ntp)
+    loop acc (MoreData np) = MoreData (loop acc . np)
+    loop acc (Yield v np) = loop (v:acc) np
+    loop _ Failed = Failed
+    loop _ (Unexpected _ _) = Failed
 
 execIt :: [BS.ByteString] -> (TokenParser -> ParseResult JValue) -> IO ()
 execIt input startParseResult = loop (tail input) $ startParseResult (tokenParser $ head input)
@@ -61,7 +74,7 @@ execIt input startParseResult = loop (tail input) $ startParseResult (tokenParse
         loop dta $ np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = array (array value)
+testParser = array value
 
 main :: IO ()
 main = do

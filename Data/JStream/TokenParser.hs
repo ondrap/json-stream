@@ -13,7 +13,8 @@ import           Data.Char             (isDigit, isDigit, isSpace)
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8)
 
-data JValue = JString T.Text | JNumber Int | JBool Bool | JNull deriving (Show)
+data JValue = JString T.Text | JNumber Int | JBool Bool | JNull
+              | JArray [JValue] | JObject [(T.Text, JValue)] deriving (Show)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
                | ArrayKey T.Text | JValue JValue
