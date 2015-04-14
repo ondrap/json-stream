@@ -44,8 +44,7 @@ instance Applicative Parser where
             (Failed err, _) -> Failed err
             (_, Failed err) -> Failed err
             (_, _) -> Failed "Unexpected error in parallel processing."
-      yieldResults [] end = end
-      yieldResults (fst:rest) end = Yield fst (yieldResults rest end)
+      yieldResults values end = foldr Yield end values
 
       processParam :: Parser a -> [a] -> TokenParser -> (ParseResult a, [a])
       processParam p acc' tok = processParam' (callParse p tok) acc'
@@ -85,12 +84,12 @@ array valparse = Parser $ \tp ->
     arrcontent (Unexpected ArrayEnd ntp) = Done ntp
     arrcontent (Unexpected el _) = Failed ("Array - unexpected: " ++ show el)
 
-object :: KeyParser a -> Parser a
-object valparse = Parser $ \tp ->
+object' :: KeyParser a -> Parser a
+object' valparse = Parser $ \tp ->
   case tp of
     (PartialResult ObjectBegin ntp _) -> objcontent (callParse (callKeyParse valparse) ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
-    (TokMoreData ntok _) -> MoreData (object valparse, ntok)
+    (TokMoreData ntok _) -> MoreData (object' valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
     objcontent (Done ntp) = objcontent (callParse (callKeyParse valparse) ntp) -- Reset to next value
@@ -100,16 +99,16 @@ object valparse = Parser $ \tp ->
     objcontent (Unexpected ObjectEnd ntp) = Done ntp
     objcontent (Unexpected el _) = Failed ("Object - unexpected: " ++ show el)
 
-keyValue :: Parser a -> KeyParser (T.Text, a)
-keyValue valparse = KeyParser $ Parser $ keyValue_'
+object :: Parser a -> Parser (T.Text, a)
+object valparse = object' $ KeyParser $ Parser keyValue_'
   where
     keyValue_' (TokFailed _) = Failed "KeyValue - token failed"
     keyValue_' (TokMoreData ntok _) = MoreData (Parser keyValue_', ntok)
     keyValue_' (PartialResult (ObjectKey key) ntok _) = (key,) <$> callParse valparse ntok
     keyValue_' (PartialResult el ntok _) = Unexpected el ntok
 
-objKey :: T.Text -> Parser a -> KeyParser a
-objKey name valparse = KeyParser $ Parser $ \tok -> filterKey $ callParse (callKeyParse (keyValue valparse)) tok
+objectKey :: T.Text -> Parser a -> Parser a
+objectKey name valparse = Parser $ \tok -> filterKey $ callParse (object valparse) tok
   where
     filterKey :: ParseResult (T.Text, a) -> ParseResult a
     filterKey (Done ntp) = Done ntp
@@ -128,6 +127,7 @@ value = Parser value'
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) = JArray <$> callParse (getYields (array value)) tok
+    value' tok@(PartialResult ObjectBegin _ _) = JObject <$> callParse (getYields (object value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
 
 -- | Continue parsing, thus skipping any value.
@@ -174,12 +174,14 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = array ((,) <$> object (objKey "ondra" value) <*> object (objKey "martin" value))
+testParser = array (object $ (,) <$> (objectKey "1" value) <*> (objectKey "2" value))
+-- testParser = array (value)
 
 main :: IO ()
 main = do
   -- let test = ["[1,2", "2,3,\"", "ond\\\"ra\"","t", "rue,fal", "se,[null]", "{\"ondra\":\"martin\", \"x\":5}", "]"]
   -- let test = ["[[1, 2], [3, 4 ], [5, \"ondra\", true, false, null] ] "]
-  let test = ["[{\"ondra\":12, \"martin\":true}, {\"ondra\":13, \"mardtin\":false}]"]
+--  let test = ["[{\"ondra\":{\"1\":1, \"2\":2}, \"martin\":{\"1\":3, \"2\":4}}, {\"ondra\":13, \"mardtin\":false}]"]
+  let test = ["[{\"ondra\":{\"1\":5, \"2\":1}, \"martin\":{\"1\":3, \"2\":4}}, {\"onddra\":13, \"mardtin\":false}]"]
   execIt test testParser
   return ()
