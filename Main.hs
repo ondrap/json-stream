@@ -1,7 +1,6 @@
 {-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
-{-# LANGUAGE DeriveFunctor     #-}
 
 import           Control.Applicative
 import qualified Data.ByteString.Char8    as BS
@@ -64,11 +63,6 @@ newtype Parser a = Parser {
     callParse :: TokenParser -> ParseResult a
 }
 
--- Special parser for key-value pairs
-newtype KeyParser a = KeyParser {
-  callKeyParse :: Parser a
-} deriving (Functor)
-
 array :: Parser a -> Parser a
 array valparse = Parser $ \tp ->
   case tp of
@@ -84,15 +78,15 @@ array valparse = Parser $ \tp ->
     arrcontent (Unexpected ArrayEnd ntp) = Done ntp
     arrcontent (Unexpected el _) = Failed ("Array - unexpected: " ++ show el)
 
-object' :: KeyParser a -> Parser a
+object' :: Parser a -> Parser a
 object' valparse = Parser $ \tp ->
   case tp of
-    (PartialResult ObjectBegin ntp _) -> objcontent (callParse (callKeyParse valparse) ntp)
+    (PartialResult ObjectBegin ntp _) -> objcontent (callParse valparse ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
     (TokMoreData ntok _) -> MoreData (object' valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
-    objcontent (Done ntp) = objcontent (callParse (callKeyParse valparse) ntp) -- Reset to next value
+    objcontent (Done ntp) = objcontent (callParse valparse ntp) -- Reset to next value
     objcontent (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent . np), ntok)
     objcontent (Yield v np) = Yield v (objcontent np)
     objcontent (Failed err) = Failed err
@@ -100,7 +94,7 @@ object' valparse = Parser $ \tp ->
     objcontent (Unexpected el _) = Failed ("Object - unexpected: " ++ show el)
 
 object :: Parser a -> Parser (T.Text, a)
-object valparse = object' $ KeyParser $ Parser keyValue_'
+object valparse = object' $ Parser keyValue_'
   where
     keyValue_' (TokFailed _) = Failed "KeyValue - token failed"
     keyValue_' (TokMoreData ntok _) = MoreData (Parser keyValue_', ntok)
