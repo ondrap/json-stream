@@ -20,9 +20,12 @@ data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
                | ObjectKey T.Text | JValue JValue
                deriving (Show)
 
+-- | Intermediate results for parsing data into JSON tokens.
 data TokenParser =  TokMoreData (BS.ByteString -> TokenParser)
-                      | PartialResult Element TokenParser BS.ByteString -- ^ found element, continuation, unparsed data
-                      | TokFailed
+                  | PartialResult Element TokenParser BS.ByteString
+                  -- ^ found element, continuation, actual parsing view - so that we can report the unparsed
+                  -- data when the parsing finishes.
+                  | TokFailed BS.ByteString
 
 isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
@@ -52,7 +55,7 @@ parseSpecChar start bl
   | chr == 'r' = slashchr '\r'
   | chr == 't' = slashchr '\t'
   -- TODO - unicode
-  | otherwise = TokFailed
+  | otherwise = TokFailed bl
   where
     chr = BS.head bl
     slashchr c = parseString (BS.singleton c:start) (BS.tail bl)
@@ -60,7 +63,7 @@ parseSpecChar start bl
 chooseKeyOrValue :: T.Text -> BS.ByteString -> TokenParser
 chooseKeyOrValue text bl
   | BS.null bl = moredata "" (chooseKeyOrValue text)
-  | chr == ':' = PartialResult (ObjectKey text) (tokenParser $ BS.tail bl) (BS.tail bl)
+  | chr == ':' = PartialResult (ObjectKey text) (tokenParser $ BS.tail bl) bl
   | otherwise = PartialResult (JValue $ JString text) (tokenParser bl) bl
   where
     chr = BS.head bl
@@ -89,12 +92,12 @@ tokenParser bl
   | isDigit chr =
         let (start, rest) = BS.span isDigit bl
         in if | BS.null rest -> moredata bl tokenParser
-              | otherwise -> PartialResult (JValue $ JNumber $ read (BS.unpack start)) (tokenParser rest) rest
+              | otherwise -> PartialResult (JValue $ JNumber $ read (BS.unpack start)) (tokenParser rest) bl
   | chr == '"' = parseString [] (BS.tail bl)
   | Just res <- ident "true" (JValue $ JBool True) bl = res
   | Just res <- ident "false" (JValue $ JBool False) bl = res
   | Just res <- ident "null" (JValue JNull) bl = res
-  | otherwise = TokFailed
+  | otherwise = TokFailed bl
   where
     chr = BS.head bl
-    partres elm = PartialResult elm (tokenParser $ BS.tail bl) (BS.tail bl)
+    partres elm = PartialResult elm (tokenParser $ BS.tail bl) bl
