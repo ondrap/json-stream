@@ -3,6 +3,7 @@ module Data.JsonStream.IO (
 ) where
 
 import Control.Monad (when)
+import Control.Exception (mask_)
 import Control.Concurrent.MVar
 import qualified Data.ByteString as BS
 
@@ -17,7 +18,7 @@ parseIOInput parser newdata = do
   return $ modifyMVar nextstate generate
   where
     generate (ParseYield v np) = return (np, Right v)
-    generate (ParseNeedData next) = do
+    generate (ParseNeedData next) = mask_ $ do -- Mask, so that we either consume IO and change MVar or not
       dta <- newdata
       when (BS.null dta) $ error "Not enough data."
       generate (next dta)
