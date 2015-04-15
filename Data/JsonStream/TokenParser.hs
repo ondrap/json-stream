@@ -162,7 +162,7 @@ chooseKeyOrValue :: T.Text -> TokenParser ()
 chooseKeyOrValue text = do
   _ <- getWhile isSpace
   chr <- peekChar
-  if | chr == ':' -> yield $ ObjectKey text
+  if | chr == ':' -> pickChar >> yield (ObjectKey text)
      | otherwise -> yield $ JValue $ AE.String text
 
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
