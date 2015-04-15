@@ -30,6 +30,7 @@ data TokenParser =  TokMoreData (BS.ByteString -> TokenParser) BS.ByteString
 isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
 
+-- | Parse unquoted identifier - true/false/null
 ident :: BS.ByteString -> Element -> BS.ByteString -> Maybe TokenParser
 ident name el input
   | BS.length name < BS.length input =
@@ -43,9 +44,9 @@ ident name el input
 moredata :: BS.ByteString -> (BS.ByteString -> TokenParser) -> BS.ByteString -> TokenParser
 moredata bl p context = TokMoreData (p . BS.append bl) context
 
-parseSpecChar :: [BS.ByteString] -> BS.ByteString -> TokenParser
-parseSpecChar start bl
-  | BS.null bl = moredata "" (parseSpecChar start) ""
+parseSpecChar :: [BS.ByteString] -> BS.ByteString -> BS.ByteString -> TokenParser
+parseSpecChar start context bl
+  | BS.null bl = moredata "" (parseSpecChar start context) ""
   | chr == '"' = slashchr '"'
   | chr == '\\' = slashchr '\\'
   | chr == '/' = slashchr '\\'
@@ -58,7 +59,7 @@ parseSpecChar start bl
   | otherwise = TokFailed bl
   where
     chr = BS.head bl
-    slashchr c = parseString (BS.singleton c:start) (BS.tail bl)
+    slashchr c = parseString (BS.singleton c:start) context (BS.tail bl)
 
 chooseKeyOrValue :: T.Text -> BS.ByteString -> BS.ByteString -> TokenParser
 chooseKeyOrValue text context bl
@@ -70,12 +71,12 @@ chooseKeyOrValue text context bl
 
 
 -- | Naparsuje string, ale po ukonceni stringu pocka, jestli neni ':', pak by to byl klic
-parseString :: [BS.ByteString] -> BS.ByteString -> TokenParser
-parseString start bl
-  | BS.null bl = moredata "" (parseString start) $ BS.cons '"' (BS.concat (reverse start))
-  | chr == '"' = chooseKeyOrValue (decodeUtf8 $ BS.concat $ reverse start) bl (BS.tail bl)
-  | chr == '\\' = parseSpecChar start (BS.tail bl)
-  | otherwise = parseString (cont:start) rest
+parseString :: [BS.ByteString] -> BS.ByteString -> BS.ByteString -> TokenParser
+parseString start context bl
+  | BS.null bl = moredata "" (parseString start context) $ BS.cons '"' (BS.concat (reverse start))
+  | chr == '"' = chooseKeyOrValue (decodeUtf8 $ BS.concat $ reverse start) context (BS.tail bl)
+  | chr == '\\' = parseSpecChar start context (BS.tail bl)
+  | otherwise = parseString (cont:start) context rest
   where
     chr = BS.head bl
     (cont, rest) = BS.break (\c -> c == '"' || c == '\\' ) bl
@@ -93,7 +94,7 @@ tokenParser bl
         let (start, rest) = BS.span isDigit bl
         in if | BS.null rest -> moredata bl tokenParser bl
               | otherwise -> PartialResult (JValue $ JNumber $ read (BS.unpack start)) (tokenParser rest) bl
-  | chr == '"' = parseString [] (BS.tail bl)
+  | chr == '"' = parseString [] bl (BS.tail bl)
   | Just res <- ident "true" (JValue $ JBool True) bl = res
   | Just res <- ident "false" (JValue $ JBool False) bl = res
   | Just res <- ident "null" (JValue JNull) bl = res

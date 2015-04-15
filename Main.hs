@@ -19,11 +19,11 @@ execIt input parser = loop (tail input) $ runParser parser (head input)
         putStrLn $ "Got: " ++ show item
         loop dta np
 
-testParser = filterI (\(JNumber x) -> x >3) $ array value
+testParser = toList $ array value
 -- testParser = (,) <$> array value <*> array value
 
 main :: IO ()
 main = do
-  let test = ["[1,2,3,4,5,6,7]"]
+  let test = ["[1,2,3,4,5,6,7] \"sdjfsdjfl\\n"]
   execIt test testParser
   return ()
