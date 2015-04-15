@@ -171,6 +171,8 @@ ignoreVal = Parser $ handleTok 0
 
     handleTok 0 (PartialResult (JValue _) ntok _) = Done ntok
     handleTok 0 (PartialResult (ObjectKey _) ntok _) = Done ntok
+    handleTok 0 (PartialResult elm ntok _)
+      | elm == ArrayEnd || elm == ObjectEnd = Unexpected elm ntok
     handleTok level (PartialResult (JValue _) ntok _) = handleTok level ntok
     handleTok level (PartialResult (ObjectKey _) ntok _) = handleTok level ntok
 

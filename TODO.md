@@ -3,6 +3,8 @@
 
 - [ ] Change to use Aeson values, add aeson integration
 
+- [ ] Simplify token parser
+
 - Tests
   - [ ] Combinators
   - [ ] <|>, <*>

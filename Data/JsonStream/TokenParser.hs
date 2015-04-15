@@ -9,7 +9,8 @@ module Data.JsonStream.TokenParser (
 ) where
 
 import qualified Data.ByteString.Char8 as BS
-import           Data.Char             (isDigit, isDigit, isSpace, isHexDigit)
+import qualified Data.ByteString.Lazy.Char8 as BL
+import           Data.Char             (isDigit, isDigit, isSpace, isHexDigit, isLower)
 import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8With, encodeUtf8)
 import Data.Text.Encoding.Error (lenientDecode)
@@ -38,15 +39,19 @@ isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
 
 -- | Parse unquoted identifier - true/false/null
-ident :: BS.ByteString -> Element -> BS.ByteString -> Maybe TokenParser
-ident name el input
-  | BS.length name < BS.length input =
-      if name `BS.isPrefixOf` input && isBreakChar (BS.index input (BS.length name))
-        then Just $ PartialResult el (tokenParser rest) input
-        else Nothing
-  | otherwise = Just $ moredata input tokenParser input
+parseIdent :: BS.ByteString -> BS.ByteString -> BS.ByteString -> TokenParser
+parseIdent tmpid context input
+  | BS.null input = moredata "" (\d -> parseIdent tmpid (BS.append context d) d) context
+  | isBreakChar firstChar = toTemp tmpid input
+  | BS.length tmpid > 5 = TokFailed context
+  | isLower firstChar = parseIdent (tmpid `BS.append` BS.takeWhile isLower input) context (BS.dropWhile isLower input)
+  | otherwise = TokFailed context
   where
-    rest = BS.drop (BS.length name) input
+    firstChar = BS.head input
+    toTemp "true" dta = PartialResult (JValue $ JBool True) (tokenParser input) context
+    toTemp "false" dta = PartialResult (JValue $ JBool False) (tokenParser input) context
+    toTemp "null" dta = PartialResult (JValue JNull) (tokenParser input) context
+    toTemp _ _ = TokFailed context
 
 moredata :: BS.ByteString -> (BS.ByteString -> TokenParser) -> BS.ByteString -> TokenParser
 moredata bl p context = TokMoreData (p . BS.append bl) context
@@ -123,9 +128,7 @@ tokenParser bl
         in if | BS.null rest -> moredata bl tokenParser bl
               | otherwise -> PartialResult (JValue $ JNumber $ read (BS.unpack start)) (tokenParser rest) bl
   | chr == '"' = parseString [] bl (BS.tail bl)
-  | Just res <- ident "true" (JValue $ JBool True) bl = res
-  | Just res <- ident "false" (JValue $ JBool False) bl = res
-  | Just res <- ident "null" (JValue JNull) bl = res
+  | chr == 't' || chr == 'f' || chr == 'n' = parseIdent "" bl bl
   | otherwise = TokFailed bl
   where
     chr = BS.head bl

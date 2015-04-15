@@ -33,7 +33,10 @@ tokenTest chunks = reverse $ test [] (tail chunks) (tokenParser $ head chunks)
 
 main :: IO ()
 main = do
-  let test = ["[1,2,\"\\u0158\\u0159\",4,5,6,7]"]
-  print $ tokenTest test
-  -- execIt test testParser
+  let test = "[1,2,false,true,null,6,7]"
+  print $ tokenTest [test]
+
+  let x = parseByteString (array value) test
+  print x
+
   return ()
