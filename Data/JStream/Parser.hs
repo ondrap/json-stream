@@ -3,6 +3,8 @@ module Data.JStream.Parser (
     Parser
   , ParseOutput(..)
   , runParser
+  , parseByteString
+  , parseLazyByteString
 
   , value
   , objectWithKey
@@ -19,6 +21,7 @@ module Data.JStream.Parser (
 import Control.Applicative
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 
 import           Data.JStream.TokenParser
 
@@ -93,9 +96,11 @@ array' valparse = Parser $ \tp ->
     arrcontent _ (Unexpected ArrayEnd ntp) = Done ntp
     arrcontent _ (Unexpected el _) = Failed ("Array - unexpected: " ++ show el)
 
+-- | Match all items of an array
 array :: Parser a -> Parser a
 array valparse = array' (const valparse)
 
+-- | Match n'th item of an array
 arrayWithIndex :: Int -> Parser a -> Parser a
 arrayWithIndex idx valparse = array' itemFn
   where
@@ -103,6 +108,7 @@ arrayWithIndex idx valparse = array' itemFn
       | aidx == idx = valparse
       | otherwise = ignoreVal
 
+-- | Match all items of an array, add index to output
 indexedArray :: Parser a -> Parser (Int, a)
 indexedArray valparse = array' (\key -> (key,) <$> valparse)
 
@@ -126,12 +132,15 @@ object' valparse = Parser $ \tp ->
     keyValue (PartialResult (ObjectKey key) ntok _) = callParse (valparse key) ntok
     keyValue (PartialResult el ntok _) = Unexpected el ntok
 
+-- | Match all key-value pairs of an object, return them as a tuple
 objectItems :: Parser a -> Parser (T.Text, a)
 objectItems valparse = object' $ \key -> (key,) <$> valparse
 
+-- | Match all key-value pairs of an object, return only values
 objectValues :: Parser a -> Parser a
 objectValues valparse = object' (const valparse)
 
+-- | Match only specific key of an object
 objectWithKey :: T.Text -> Parser a -> Parser a
 objectWithKey name valparse = object' itemFn
   where
@@ -152,7 +161,7 @@ value = Parser value'
         JObject <$> callParse (toList (objectItems value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
 
--- | Continue parsing, thus skipping any value.
+-- | Skip value; cheat to avoid parsing and make it faster
 ignoreVal :: Parser a
 ignoreVal = Parser $ handleTok 0
   where
@@ -182,6 +191,7 @@ toList f = Parser $ \ntok -> loop [] (callParse f ntok)
     loop _ (Failed err) = Failed err
     loop _ (Unexpected el _) = Failed ("getYields - unexpected: " ++ show el)
 
+-- | Let only items matching a condition pass
 filterI :: (a -> Bool) -> Parser a -> Parser a
 filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
   where
@@ -198,8 +208,9 @@ data ParseOutput a = ParseYield a (ParseOutput a)
                     | ParseFailed String
                     | ParseDone BS.ByteString
 
-runParser :: Parser a -> BS.ByteString -> ParseOutput a
-runParser parser startdata = parse $ callParse parser (tokenParser startdata)
+-- | Run streaming parser with initial input
+runParser' :: Parser a -> BS.ByteString -> ParseOutput a
+runParser' parser startdata = parse $ callParse parser (tokenParser startdata)
   where
     parse (MoreData (np, ntok)) = ParseNeedData (parse . callParse np .ntok)
     parse (Failed err) = ParseFailed err
@@ -208,3 +219,32 @@ runParser parser startdata = parse $ callParse parser (tokenParser startdata)
     parse (Done (PartialResult _ _ rest)) = ParseDone rest
     parse (Done (TokFailed rest)) = ParseDone rest
     parse (Done (TokMoreData _ rest)) = ParseDone rest
+
+-- | Run streaming parser, immediately returns ParseMoreData
+runParser :: Parser a -> ParseOutput a
+runParser parser = runParser' parser BS.empty
+
+-- | Parse a bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
+parseByteString :: Parser a -> BS.ByteString -> [a]
+parseByteString parser startdata = loop (runParser' parser startdata)
+  where
+    loop (ParseNeedData _) = error "Not enough data."
+    loop (ParseDone _) = []
+    loop (ParseFailed err) = error err
+    loop (ParseYield v np) = v : loop np
+
+-- | Parse a lazy bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
+parseLazyByteString :: Parser a -> BL.ByteString -> [a]
+parseLazyByteString parser input = loop chunks (runParser parser)
+  where
+    chunks = BL.toChunks input
+    loop [] (ParseNeedData _) = error "Not enough data."
+    loop (dta:rest) (ParseNeedData np) = loop rest (np dta)
+    loop _ (ParseDone _) = []
+    loop _ (ParseFailed err) = error err
+    loop rest (ParseYield v np) = v : loop rest np
+
+-- | Parse input using IO monad or transformers on IO. Calls "fail" on error.
+-- parseIOInput :: MonadIO m => Parser a -> IO ByteString -> m (a, m a)
+-- parseIOInput parser newdata =
+--   where

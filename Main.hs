@@ -9,7 +9,7 @@ import Data.JStream.Parser
 import Data.JStream.TokenParser
 
 execIt :: Show a => [BS.ByteString] -> Parser a -> IO ()
-execIt input parser = loop (tail input) $ runParser parser (head input)
+execIt input parser = loop input $ runParser parser
   where
     loop [] (ParseNeedData _) = putStrLn "Out of data - "
     loop _ (ParseFailed err) = putStrLn $ "Failed: " ++ err
@@ -24,6 +24,6 @@ testParser = toList $ array value
 
 main :: IO ()
 main = do
-  let test = ["[1,2,3,4,5,6,7] \"sdjfsdjfl\\n"]
+  let test = ["[1,{\"ondra\":null},3,4,5,6,7] \"sdjfsdjfl\\n"]
   execIt test testParser
   return ()

@@ -3,3 +3,8 @@
 - Dodelat podporu pro unicode znaky
 - Predelat funkce, aby pri moredata nemusely delat concat
 - Parsovani desetinneho cisla, negativni cislo
+
+- Testy
+  - jednotlive kombinatory
+  <|>, <*>
+  - korektni vraceni nenaparsovane hodnoty
