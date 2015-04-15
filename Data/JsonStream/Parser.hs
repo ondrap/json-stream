@@ -243,9 +243,3 @@ parseLazyByteString parser input = loop chunks (runParser parser)
     loop _ (ParseDone _) = []
     loop _ (ParseFailed err) = error err
     loop rest (ParseYield v np) = v : loop rest np
-
--- | Parse input using IO monad or transformers on IO.
--- Calls "fail" on error, return Left on end of input, Right on value.
--- parseIOInput :: MonadIO m => Parser a -> IO ByteString -> m (Either ByteString (a, m a))
--- parseIOInput parser newdata =
---   where
