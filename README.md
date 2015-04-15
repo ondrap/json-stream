@@ -13,5 +13,9 @@ check for JSON syntax and the behaviour on incorrect JSON input is undefined. In
   Parsing incorrect unicode casuses an exception which is rather inconvenient.
   Json-stream uses lenientDecoding that replaces incorrect unicode characters.
 
-- Especially when parsing values that are supposed to be ignored the parser does not check
-  syntax. As such it will likely not fail when encountering certain errors.
+- Both the tokenizer and the actual parser are very lightweight and simple. This parser will
+  not complain in many cases on incorrect input. **The result on incorrect input is undefined.**
+
+'''
+
+'''

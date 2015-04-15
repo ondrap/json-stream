@@ -1,4 +1,5 @@
-- [ ] Change functions so that moredata will not concat
+- [ ] Change token parser to be monad
+- [ ] Measure impact of context adding in tokenparser
 - [ ] Parse negative/non-decimal numbers
 
 - [ ] Change to use Aeson values, add aeson integration
@@ -10,8 +11,3 @@
   - [ ] <|>, <*>
   - [ ] Correctly returns unparsed rest of input
   - [ ] Measure performance, compare with Aeson
-
---
-
-- lenientDecode on utf8
-- not strict parsing
