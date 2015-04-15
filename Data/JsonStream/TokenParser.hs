@@ -8,21 +8,24 @@ module Data.JsonStream.TokenParser (
   , tokenParser
 ) where
 
-import           Control.Monad            (replicateM, when)
+import Control.Applicative
+import           Control.Monad            (replicateM, unless, (>=>))
 import qualified Data.ByteString.Char8    as BS
-import           Data.Char                (isDigit, isDigit, isHexDigit,
+import           Data.Char                (isDigit, isDigit,
                                            isLower, isSpace)
 import qualified Data.Text                as T
 import           Data.Text.Encoding       (decodeUtf8With, encodeUtf8)
 import           Data.Text.Encoding.Error (lenientDecode)
+import Data.Scientific
 
-data JValue = JString T.Text | JNumber Int | JBool Bool | JNull
+data JValue = JString T.Text | JNumber Scientific | JBool Bool | JNull
               | JArray [JValue] | JObject [(T.Text, JValue)] deriving (Show, Eq)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
                | ObjectKey T.Text | JValue JValue
                deriving (Show, Eq)
 
+-- Internal Interface for parsing monad
 data TokenResult' a =  TokMoreData' (BS.ByteString -> TokenParser a) BS.ByteString
                  | PartialResult' Element (TokenParser a) BS.ByteString
                  -- ^ found element, continuation, actual parsing view - so that we can report the unparsed
@@ -58,10 +61,28 @@ instance Monad TokenParser where
   m >>= mpost = TokenParser $ \s ->
                 let (res, newstate) = runTokParser m s
                 in case res of
-                    TokMoreData' cont context -> (TokMoreData' (\dta -> (cont dta >>= mpost)) context, newstate)
+                    TokMoreData' cont context -> (TokMoreData' (cont >=> mpost) context, newstate)
                     PartialResult' el tokp context -> (PartialResult' el (tokp >>= mpost) context, newstate)
                     TokFailed' context -> (TokFailed' context, newstate)
                     Intermediate' result -> runTokParser (mpost result) newstate
+
+instance Functor TokenResult' where
+  fmap f (TokMoreData' newp ctx) = TokMoreData' (fmap f . newp) ctx
+  fmap f (PartialResult' el tok ctx) = PartialResult' el (fmap f tok) ctx
+  fmap _ (TokFailed' ctx) = TokFailed' ctx
+  fmap f (Intermediate' a) = Intermediate' (f a)
+
+instance Applicative TokenParser where
+  pure = return
+  f <*> param = do
+    mf <- f
+    mparam <- param
+    return (mf mparam)
+
+instance Functor TokenParser where
+  fmap f tokp = TokenParser $ \s ->
+              let (res, newstate) = runTokParser tokp s
+              in (fmap f res, newstate)
 
 failTok :: TokenParser a
 failTok = TokenParser $ \s -> (TokFailed' (stContext s), s)
@@ -90,30 +111,38 @@ yield el = TokenParser $ \state@(State dta ctx) -> (PartialResult' el (contparse
     -- Use data as new context
     contparse dta = TokenParser $ const (Intermediate' (), State dta dta )
 
--- | Return some elements satisfying predicate or none, if the next element does not satisfy
-getWhile :: (Char -> Bool) -> TokenParser BS.ByteString
-getWhile predicate = do
+-- | Return SOME input satisfying predicate or none, if the next element does not satisfy
+getWhile' :: (Char -> Bool) -> TokenParser BS.ByteString
+getWhile' predicate = do
   char <- peekChar
-  if predicate char then getWhile'
+  if predicate char then getBuf
                     else return ""
   where
-    getWhile' = TokenParser $ \(State dta ctx) ->
+    getBuf = TokenParser $ \(State dta ctx) ->
         let (st,rest) = BS.span predicate dta
         in (Intermediate' st, State rest ctx)
 
+-- | Read ALL input satisfying predicate
+getWhile :: (Char -> Bool) -> TokenParser BS.ByteString
+getWhile predicate = loop []
+  where
+    loop acc = do
+      chr <- peekChar
+      if predicate chr
+        then do
+          dta <- getWhile' predicate
+          loop (dta:acc)
+        else
+          return $ BS.concat $ reverse acc
+
 -- | Parse unquoted identifier - true/false/null
 parseIdent :: TokenParser ()
-parseIdent = loop ""
+parseIdent = do
+    ident <- getWhile isLower
+    nextchar <- peekChar
+    if | isBreakChar nextchar -> toTemp ident -- We found a barrier -> parse
+       | otherwise -> failTok
   where
-    loop ident = do
-      when (BS.length ident > 5) $ failTok
-      dta <- getWhile isLower
-      let newident = ident `BS.append` dta
-      nextchar <- peekChar
-      if | isBreakChar nextchar -> toTemp newident -- We found a barrier -> parse
-         | BS.null dta -> failTok -- No new data? obviously next char is not lower/break
-         | otherwise -> loop newident
-
     toTemp "true" = yield $ JValue $ JBool True
     toTemp "false" = yield $ JValue $ JBool False
     toTemp "null" = yield $ JValue JNull
@@ -137,8 +166,7 @@ chooseKeyOrValue :: T.Text -> TokenParser ()
 chooseKeyOrValue text = do
   _ <- getWhile isSpace
   chr <- peekChar
-  if | isSpace chr -> chooseKeyOrValue text
-     | chr == ':' -> yield $ ObjectKey text
+  if | chr == ':' -> yield $ ObjectKey text
      | otherwise -> yield $ JValue $ JString text
 
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
@@ -173,6 +201,44 @@ parseString = do
     parseSpecChar 'u' = parseUnicode
     parseSpecChar c = return c
 
+parseNumber :: TokenParser ()
+parseNumber = do
+    sign <- parseSign
+    wholepart <- parseInt
+    fractional <- parseFractional
+    expon <- parseExpon
+    let res = BS.concat [sign, wholepart, fractional, expon]
+    yield $ JValue $ JNumber $ read $ BS.unpack res
+  where
+    parseSign = do
+      chr <- peekChar
+      if | chr == '-' -> pickChar >> return "-"
+         | chr == '+' -> pickChar >> return "+"
+         | otherwise -> return ""
+
+    parseExpon = do
+      chr <- peekChar
+      if chr == 'e' || chr == 'E'
+        then do
+          _ <- pickChar
+          sign <- parseSign
+          num <- parseInt
+          return $ BS.concat ["E", sign, num]
+        else return ""
+
+    parseFractional = do
+      chr <- peekChar
+      if chr == '.'
+        then do
+          _ <- pickChar
+          num <- parseInt
+          return $ BS.cons '.' num
+        else return ""
+
+    parseInt = do
+      chr <- peekChar
+      unless (isDigit chr) failTok
+      getWhile isDigit
 
 mainParser :: TokenParser ()
 mainParser = do
@@ -183,7 +249,7 @@ mainParser = do
      | chr == '{' -> pickChar >> yield ObjectBegin
      | chr == '}' -> pickChar >> yield ObjectEnd
      | chr == ',' -> pickChar >> mainParser
---  | isDigit chr || chr == '-' = parseNumber bl
+     | isDigit chr || chr == '-' -> parseNumber
      | chr == '"' -> parseString
      | chr == 't' || chr == 'f' || chr == 'n'-> parseIdent
      | otherwise -> failTok

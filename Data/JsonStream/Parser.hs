@@ -25,11 +25,11 @@ import qualified Data.ByteString.Lazy as BL
 
 import           Data.JsonStream.TokenParser
 
-data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenParser)
+data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     | Failed String
-                    | Done TokenParser
+                    | Done TokenResult
                     | Yield v (ParseResult v)
-                    | Unexpected Element TokenParser
+                    | Unexpected Element TokenResult
 
 
 instance Functor ParseResult where
@@ -78,7 +78,7 @@ instance Alternative Parser where
       process _ _ = error "Unexpected error in parallel processing <|>"
 
 newtype Parser a = Parser {
-    callParse :: TokenParser -> ParseResult a
+    callParse :: TokenResult -> ParseResult a
 }
 
 array' :: (Int -> Parser a) -> Parser a
@@ -165,7 +165,7 @@ value = Parser value'
 ignoreVal :: Parser a
 ignoreVal = Parser $ handleTok 0
   where
-    handleTok :: Int -> TokenParser -> ParseResult a
+    handleTok :: Int -> TokenResult -> ParseResult a
     handleTok _ (TokFailed _) = Failed "Token error"
     handleTok level (TokMoreData ntok _) = MoreData (Parser (handleTok level), ntok)
 
