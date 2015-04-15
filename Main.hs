@@ -63,20 +63,30 @@ newtype Parser a = Parser {
     callParse :: TokenParser -> ParseResult a
 }
 
-array :: Parser a -> Parser a
-array valparse = Parser $ \tp ->
+array' :: (Int -> Parser a) -> Parser a
+array' valparse = Parser $ \tp ->
   case tp of
-    (PartialResult ArrayBegin ntp _) -> arrcontent (callParse valparse ntp)
+    (PartialResult ArrayBegin ntp _) -> arrcontent 0 (callParse (valparse 0) ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
-    (TokMoreData ntok _) -> MoreData (array valparse, ntok)
+    (TokMoreData ntok _) -> MoreData (array' valparse, ntok)
     (TokFailed _) -> Failed "Array - token failed"
   where
-    arrcontent (Done ntp) = arrcontent (callParse valparse ntp) -- Reset to next value
-    arrcontent (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent . np), ntp)
-    arrcontent (Yield v np) = Yield v (arrcontent np)
-    arrcontent (Failed err) = Failed err
-    arrcontent (Unexpected ArrayEnd ntp) = Done ntp
-    arrcontent (Unexpected el _) = Failed ("Array - unexpected: " ++ show el)
+    arrcontent i (Done ntp) = arrcontent (i+1) (callParse (valparse (i + 1)) ntp) -- Reset to next value
+    arrcontent i (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent i . np), ntp)
+    arrcontent i (Yield v np) = Yield v (arrcontent i np)
+    arrcontent _ (Failed err) = Failed err
+    arrcontent _ (Unexpected ArrayEnd ntp) = Done ntp
+    arrcontent _ (Unexpected el _) = Failed ("Array - unexpected: " ++ show el)
+
+array :: Parser a -> Parser a
+array valparse = array' (const valparse)
+
+arrayIndex :: Int -> Parser a -> Parser a
+arrayIndex idx valparse = array' itemFn
+  where
+    itemFn aidx
+      | aidx == idx = valparse
+      | otherwise = ignoreVal
 
 object' :: Parser a -> Parser a
 object' valparse = Parser $ \tp ->
@@ -169,11 +179,11 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = array (objectKey "ondra" $ objectKey "1" value)
+testParser = arrayIndex 2 $ arrayIndex 1 value
 -- testParser = (,) <$> array value <*> array value
 
 main :: IO ()
 main = do
-  let test = ["[{\"ondra\":{\"1\":13}}, {\"martin\":12}]"]
+  let test = ["[1,2,[3,4],5]"]
   execIt test testParser
   return ()
