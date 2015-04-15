@@ -81,48 +81,48 @@ array' valparse = Parser $ \tp ->
 array :: Parser a -> Parser a
 array valparse = array' (const valparse)
 
-arrayIndex :: Int -> Parser a -> Parser a
-arrayIndex idx valparse = array' itemFn
+arrayWithIndex :: Int -> Parser a -> Parser a
+arrayWithIndex idx valparse = array' itemFn
   where
     itemFn aidx
       | aidx == idx = valparse
       | otherwise = ignoreVal
 
-object' :: Parser a -> Parser a
+indexedArray :: Parser a -> Parser (Int, a)
+indexedArray valparse = array' (\key -> (key,) <$> valparse)
+
+object' :: (T.Text -> Parser a) -> Parser a
 object' valparse = Parser $ \tp ->
   case tp of
-    (PartialResult ObjectBegin ntp _) -> objcontent (callParse valparse ntp)
+    (PartialResult ObjectBegin ntp _) -> objcontent (keyValue ntp)
     (PartialResult el ntp _) -> Unexpected el ntp
     (TokMoreData ntok _) -> MoreData (object' valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
-    objcontent (Done ntp) = objcontent (callParse valparse ntp) -- Reset to next value
+    objcontent (Done ntp) = objcontent (keyValue ntp) -- Reset to next value
     objcontent (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent . np), ntok)
     objcontent (Yield v np) = Yield v (objcontent np)
     objcontent (Failed err) = Failed err
     objcontent (Unexpected ObjectEnd ntp) = Done ntp
     objcontent (Unexpected el _) = Failed ("Object - unexpected: " ++ show el)
 
+    keyValue (TokFailed _) = Failed "KeyValue - token failed"
+    keyValue (TokMoreData ntok _) = MoreData (Parser keyValue, ntok)
+    keyValue (PartialResult (ObjectKey key) ntok _) = callParse (valparse key) ntok
+    keyValue (PartialResult el ntok _) = Unexpected el ntok
+
 objectItems :: Parser a -> Parser (T.Text, a)
-objectItems valparse = object' $ Parser keyValue_'
-  where
-    keyValue_' (TokFailed _) = Failed "KeyValue - token failed"
-    keyValue_' (TokMoreData ntok _) = MoreData (Parser keyValue_', ntok)
-    keyValue_' (PartialResult (ObjectKey key) ntok _) = (key,) <$> callParse valparse ntok
-    keyValue_' (PartialResult el ntok _) = Unexpected el ntok
+objectItems valparse = object' $ \key -> (key,) <$> valparse
 
 objectValues :: Parser a -> Parser a
-objectValues valparse = snd <$> objectItems valparse
+objectValues valparse = object' (const valparse)
 
-objectKey :: T.Text -> Parser a -> Parser a
-objectKey name valparse = object' $ Parser filterKey'
+objectWithKey :: T.Text -> Parser a -> Parser a
+objectWithKey name valparse = object' itemFn
   where
-    filterKey' (TokFailed _) = Failed "KeyValue - token failed"
-    filterKey' (TokMoreData ntok _) = MoreData (Parser filterKey', ntok)
-    filterKey' (PartialResult (ObjectKey key) ntok _)
-      | key == name = callParse valparse ntok
-      | otherwise = callParse ignoreVal ntok
-    filterKey' (PartialResult el ntok _) = Unexpected el ntok
+    itemFn key
+      | key == name = valparse
+      | otherwise = ignoreVal
 
 -- | Parses underlying values and generates a JValue
 value :: Parser JValue
@@ -131,8 +131,10 @@ value = Parser value'
     value' (TokFailed _) = Failed "Value - token failed"
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
-    value' tok@(PartialResult ArrayBegin _ _) = JArray <$> callParse (getYields (array value)) tok
-    value' tok@(PartialResult ObjectBegin _ _) = JObject <$> callParse (getYields (objectItems value)) tok
+    value' tok@(PartialResult ArrayBegin _ _) =
+        JArray <$> callParse (toList (array value)) tok
+    value' tok@(PartialResult ObjectBegin _ _) =
+        JObject <$> callParse (toList (objectItems value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
 
 -- | Continue parsing, thus skipping any value.
@@ -156,14 +158,25 @@ ignoreVal = Parser $ handleTok 0
     handleTok _ _ = Failed "Unexpected "
 
 -- | Fetch yields of a function and return them as list
-getYields :: Parser a -> Parser [a]
-getYields f = Parser $ \ntok -> loop [] (callParse f ntok)
+toList :: Parser a -> Parser [a]
+toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
     loop acc (Done ntp) = Yield (reverse acc) (Done ntp)
     loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
     loop acc (Yield v np) = loop (v:acc) np
     loop _ (Failed err) = Failed err
     loop _ (Unexpected el _) = Failed ("getYields - unexpected: " ++ show el)
+
+filterI :: (a -> Bool) -> Parser a -> Parser a
+filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
+  where
+    loop (Done ntp) = Done ntp
+    loop (Failed err) = Failed err
+    loop (Unexpected el b) = Unexpected el b
+    loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
+    loop (Yield v np)
+      | cond v = Yield v (loop np)
+      | otherwise = loop np
 
 execIt :: Show a => [BS.ByteString] -> Parser a -> IO ()
 execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head input)
@@ -179,11 +192,11 @@ execIt input parser = loop (tail input) $ callParse parser (tokenParser $ head i
         loop dta np
     loop _ (Unexpected _ _) = putStrLn "Unexpected - failed"
 
-testParser = arrayIndex 2 $ arrayIndex 1 value
+testParser = filterI (\(JNumber x) -> x >3) $ array value
 -- testParser = (,) <$> array value <*> array value
 
 main :: IO ()
 main = do
-  let test = ["[1,2,[3,4],5]"]
+  let test = ["[1,2,3,4,5,6,7]"]
   execIt test testParser
   return ()
