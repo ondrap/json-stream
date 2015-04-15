@@ -19,11 +19,13 @@ check for JSON syntax and the behaviour on incorrect JSON input is undefined. In
 
 
 ```haskell
--- The parseByteString function always returns a list of 'things'. Other functions are available.
+-- The parseByteString function always returns a list of 'things'.
+-- Other functions are available.
 >>> :t parseByteString
 parseByteString :: Parser a -> BS.ByteString -> [a]
 
--- 'value' stands for FromJSON instance that will be yielded; most normal types work by default
+-- 'value' stands for FromJSON instance that will be yielded;
+-- most normal types work by default
 >>> parseByteString value "[1,2,3]" :: [[Int]]
 [[1,2,3]]
 
@@ -33,18 +35,21 @@ parseByteString :: Parser a -> BS.ByteString -> [a]
 
 -- Use <*> for parallel parsing. Order is not important.
 -- JSON: [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
->>> let parser = array $ (,) <$> objectWithKey "name" value <*> objectWithKey "age" value
+>>> let parser = array $ (,) <$> objectWithKey "name" value
+                             <*> objectWithKey "age" value
 >>> parseByteString  parser (..json..) :: [(Text,Int)]
 [("John",20),("Frank",30)]
 
 -- If you have more results returned from each branch, all are combined.
 -- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
->>> let parser = array $ (,) <$> objectWithKey "key2" (array value) <*> objectWithKey "key1" (array value)
+>>> let parser = array $ (,) <$> objectWithKey "key2" (array value)
+                             <*> objectWithKey "key1" (array value)
 >>> parse parser (..json..) :: [(Int, Int)]
 [(6,2),(6,1),(5,2),(5,1)]
 
 -- Use <|> to return both branches
->>> let parser = array $ objectWithKey "key1" (array value) <|> objectWithKey "key2" (array value)
+>>> let parser = array $ objectWithKey "key1" (array value)
+                        <|> objectWithKey "key2" (array value)
 >>> parse parser test :: [Int]
 [1,2,5,6]
 
