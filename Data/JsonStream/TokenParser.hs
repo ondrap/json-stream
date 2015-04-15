@@ -9,9 +9,10 @@ module Data.JsonStream.TokenParser (
 ) where
 
 import qualified Data.ByteString.Char8 as BS
-import           Data.Char             (isDigit, isDigit, isSpace)
+import           Data.Char             (isDigit, isDigit, isSpace, isHexDigit)
 import qualified Data.Text             as T
-import           Data.Text.Encoding    (decodeUtf8)
+import           Data.Text.Encoding    (decodeUtf8With, encodeUtf8)
+import Data.Text.Encoding.Error (lenientDecode)
 
 data JValue = JString T.Text | JNumber Int | JBool Bool | JNull
               | JArray [JValue] | JObject [(T.Text, JValue)] deriving (Show, Eq)
@@ -26,6 +27,12 @@ data TokenParser =  TokMoreData (BS.ByteString -> TokenParser) BS.ByteString
                   -- ^ found element, continuation, actual parsing view - so that we can report the unparsed
                   -- data when the parsing finishes.
                   | TokFailed BS.ByteString
+
+-- For debugging purposes
+instance Show TokenParser where
+  show (TokMoreData _ _) = "TokMoreData"
+  show (TokFailed _) = "TokFailed"
+  show (PartialResult el _ rest) = "(PartialResult " ++ show el ++ " " ++ show rest ++ ")"
 
 isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
@@ -44,9 +51,30 @@ ident name el input
 moredata :: BS.ByteString -> (BS.ByteString -> TokenParser) -> BS.ByteString -> TokenParser
 moredata bl p context = TokMoreData (p . BS.append bl) context
 
+parseUnicode :: [BS.ByteString] -> BS.ByteString -> BS.ByteString -> BS.ByteString -> TokenParser
+parseUnicode chunks uni context bl
+  | BS.null bl =
+      moredata "" (\t -> parseUnicode chunks uni t t) context
+  | remaining == 0 = parseString (encodeUtf8 (T.singleton $ hexToChar uni) : chunks) bl bl
+  | BS.all isHexDigit newbytes =
+      parseUnicode chunks (BS.append uni $ BS.take remaining bl)
+                           context (BS.drop remaining bl)
+  | otherwise = TokFailed context
+  where
+    hexToChar = toEnum . foldl1 (\a b -> 16 * a + b) . map hexCharToInt . BS.unpack
+    newbytes = BS.take remaining bl
+    remaining = 4 - BS.length uni
+    hexCharToInt :: Char -> Int
+    hexCharToInt c
+      | c >= 'A' && c <= 'F' = 10 + (fromEnum c - fromEnum 'A')
+      | c >= 'a' && c <= 'f' = 10 + (fromEnum c - fromEnum 'a')
+      | isDigit c = fromEnum c - fromEnum '0'
+      | otherwise = error "Incorrect hex input, internal error."
+
+
 parseSpecChar :: [BS.ByteString] -> BS.ByteString -> BS.ByteString -> TokenParser
-parseSpecChar start context bl
-  | BS.null bl = moredata "" (parseSpecChar start context) ""
+parseSpecChar chunks context bl
+  | BS.null bl = moredata "" (parseSpecChar chunks context) ""
   | chr == '"' = slashchr '"'
   | chr == '\\' = slashchr '\\'
   | chr == '/' = slashchr '\\'
@@ -55,11 +83,11 @@ parseSpecChar start context bl
   | chr == 'n' = slashchr '\n'
   | chr == 'r' = slashchr '\r'
   | chr == 't' = slashchr '\t'
-  -- TODO - unicode
+  | chr == 'u' = parseUnicode chunks "" context (BS.tail bl)
   | otherwise = TokFailed bl
   where
     chr = BS.head bl
-    slashchr c = parseString (BS.singleton c:start) context (BS.tail bl)
+    slashchr c = parseString (BS.singleton c:chunks) context (BS.tail bl)
 
 chooseKeyOrValue :: T.Text -> BS.ByteString -> BS.ByteString -> TokenParser
 chooseKeyOrValue text context bl
@@ -74,7 +102,7 @@ chooseKeyOrValue text context bl
 parseString :: [BS.ByteString] -> BS.ByteString -> BS.ByteString -> TokenParser
 parseString start context bl
   | BS.null bl = moredata "" (parseString start context) $ BS.cons '"' (BS.concat (reverse start))
-  | chr == '"' = chooseKeyOrValue (decodeUtf8 $ BS.concat $ reverse start) context (BS.tail bl)
+  | chr == '"' = chooseKeyOrValue (decodeUtf8With lenientDecode $ BS.concat $ reverse start) context (BS.tail bl)
   | chr == '\\' = parseSpecChar start context (BS.tail bl)
   | otherwise = parseString (cont:start) context rest
   where
