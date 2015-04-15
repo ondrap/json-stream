@@ -1,6 +1,6 @@
 name:                json-stream
 version:             0.1.0.0
-synopsis:            Streaming applicative JSON parser
+synopsis:            Incremental applicative JSON parser
 -- description:
 license:             BSD3
 license-file:        LICENSE

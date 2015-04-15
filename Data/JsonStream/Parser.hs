@@ -44,7 +44,7 @@ instance Functor Parser where
 
 instance Applicative Parser where
   pure x = Parser $ \tok -> Yield x (callParse ignoreVal tok)
-  -- | Run both parsers in parallel using a shared token parsen, combine results
+  -- | Run both parsers in parallel using a shared token parser, combine results
   (<*>) m1 m2 = Parser (process (m1, []) (m2, []))
     where
       process (dm1,lst1) (dm2,lst2) tok =
@@ -59,7 +59,7 @@ instance Applicative Parser where
                   yieldResults [ mx my | mx <- m1lst, my <- m2lst ] (Unexpected el ntok)
             (Failed err, _) -> Failed err
             (_, Failed err) -> Failed err
-            (_, _) -> Failed "Unexpected error in parallel processing."
+            (_, _) -> Failed "Unexpected error in parallel processing <*>."
       yieldResults values end = foldr Yield end values
 
       processParam :: Parser a -> [a] -> TokenParser -> (ParseResult a, [a])
@@ -71,11 +71,20 @@ instance Applicative Parser where
           processParam' (Unexpected el ntok) acc = (Unexpected el ntok, acc)
           processParam' (Yield v np) acc = processParam' np (v:acc)
 
--- instance Alternative Parser where
---   empty = ignoreVal
---   -- | Run both parsers in parallel yielding from both as the data comes
---   (<|>) m1 m2 = undefined
-
+instance Alternative Parser where
+  empty = ignoreVal
+  -- | Run both parsers in parallel using a shared token parser, yielding from both as the data comes
+  (<|>) m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
+    where
+      process (Done ntok) (Done _) = Done ntok
+      process (Failed err) _ = Failed err
+      process _ (Failed err) = Failed err
+      process (Yield v np1) p2 = Yield v (process np1 p2)
+      process p1 (Yield v np2) = Yield v (process p1 np2)
+      process (MoreData (np1, ntok)) (MoreData (np2, _)) =
+          MoreData (Parser $ \tok -> process (callParse np1 tok) (callParse np2 tok), ntok)
+      process (Unexpected el ntok) (Unexpected _ _) = Unexpected el ntok
+      process _ _ = error "Unexpected error in parallel processing <|>"
 
 newtype Parser a = Parser {
     callParse :: TokenParser -> ParseResult a

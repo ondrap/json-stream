@@ -1,6 +1,5 @@
-- [ ] Alternative parser
-
-- [ ] Unicode characters
+- [ ] Unicode characters with \notation
+- [ ] Handle gracefully unicode decoding errors
 - [ ] Change functions so that moredata will not concat
 - [ ] Parse negative/non-decimal numbers
 
@@ -10,3 +9,4 @@
   - [ ] Combinators
   - [ ] <|>, <*>
   - [ ] Correctly returns unparsed rest of input
+  - [ ] Measure performance, compare with Aeson

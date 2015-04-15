@@ -19,11 +19,11 @@ execIt input parser = loop input $ runParser parser
         putStrLn $ "Got: " ++ show item
         loop dta np
 
-testParser = toList $ array value
+testParser = array value <|> array value
 -- testParser = (,) <$> array value <*> array value
 
 main :: IO ()
 main = do
-  let test = ["[1,{\"ondra\":null},3,4,5,6,7] \"sdjfsdjfl\\n"]
+  let test = ["[1,2,3", ",4,5,6,7] \"sdjfsdjfl\\n"]
   execIt test testParser
   return ()

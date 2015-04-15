@@ -35,7 +35,7 @@ ident :: BS.ByteString -> Element -> BS.ByteString -> Maybe TokenParser
 ident name el input
   | BS.length name < BS.length input =
       if name `BS.isPrefixOf` input && isBreakChar (BS.index input (BS.length name))
-        then Just $ PartialResult el (tokenParser rest) rest
+        then Just $ PartialResult el (tokenParser rest) input
         else Nothing
   | otherwise = Just $ moredata input tokenParser input
   where
@@ -64,8 +64,8 @@ parseSpecChar start context bl
 chooseKeyOrValue :: T.Text -> BS.ByteString -> BS.ByteString -> TokenParser
 chooseKeyOrValue text context bl
   | BS.null bl = moredata "" (chooseKeyOrValue text context) context
-  | chr == ':' = PartialResult (ObjectKey text) (tokenParser $ BS.tail bl) bl
-  | otherwise = PartialResult (JValue $ JString text) (tokenParser bl) bl
+  | chr == ':' = PartialResult (ObjectKey text) (tokenParser $ BS.tail bl) context
+  | otherwise = PartialResult (JValue $ JString text) (tokenParser bl) context
   where
     chr = BS.head bl
 

@@ -9,7 +9,7 @@ import qualified Data.ByteString as BS
 import Data.JsonStream.Parser
 
 -- | Parse input using IO monad or transformers on IO.
--- Calls "fail" on error, return Left on end of input, Right on value. Uses
+-- Return Left on end of input, Right on value, error on parse error.
 -- MVar for synchronizing the state, it should be thread-safe.
 parseIOInput :: Parser a -> IO BS.ByteString -> IO (IO (Either BS.ByteString a))
 parseIOInput parser newdata = do
