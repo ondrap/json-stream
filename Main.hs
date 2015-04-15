@@ -19,7 +19,7 @@ execIt input parser = loop input $ runParser parser
         putStrLn $ "Got: " ++ show item
         loop dta np
 
-testParser = array value <|> array value
+testParser = (,) <$> array value <*> array value
 -- testParser = (,) <$> array value <*> array value
 
 main :: IO ()

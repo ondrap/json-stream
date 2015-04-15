@@ -45,31 +45,22 @@ instance Functor Parser where
 instance Applicative Parser where
   pure x = Parser $ \tok -> Yield x (callParse ignoreVal tok)
   -- | Run both parsers in parallel using a shared token parser, combine results
-  (<*>) m1 m2 = Parser (process (m1, []) (m2, []))
+  (<*>) m1 m2 = Parser $ \tok -> process ([], []) (callParse m1 tok) (callParse m2 tok)
     where
-      process (dm1,lst1) (dm2,lst2) tok =
-        let (m1p, m1lst) = processParam dm1 lst1 tok
-            (m2p, m2lst) = processParam dm2 lst2 tok
-        in
-          case (m1p, m2p) of
-            (MoreData (np1, ntok1), MoreData (np2, _)) ->
-                MoreData (Parser (process (np1, m1lst) (np2, m2lst)), ntok1)
-            (Done ntok, Done _) -> yieldResults [ mx my | mx <- m1lst, my <- m2lst ] (Done ntok)
-            (Unexpected el ntok, Unexpected _ _) ->
-                  yieldResults [ mx my | mx <- m1lst, my <- m2lst ] (Unexpected el ntok)
-            (Failed err, _) -> Failed err
-            (_, Failed err) -> Failed err
-            (_, _) -> Failed "Unexpected error in parallel processing <*>."
+      process (lst1, lst2) (Yield v np1) p2 = process (v:lst1, lst2) np1 p2
+      process (lst1, lst2) p1 (Yield v np2) = process (lst1, v:lst2) p1 np2
+      process _ (Failed err) _ = Failed err
+      process _ _ (Failed err) = Failed err
+      process (lst1, lst2) (Done ntok) (Done _) =
+        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Done ntok)
+      process (lst1, lst2) (Unexpected el ntok) (Unexpected _ _) =
+        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Unexpected el ntok)
+      process lsts (MoreData (np1, ntok1)) (MoreData (np2, _)) =
+        MoreData (Parser (\tok -> process lsts (callParse np1 tok) (callParse np2 tok)), ntok1)
+      process _ _ _ = Failed "Unexpected error in parallel processing <*>."
+
       yieldResults values end = foldr Yield end values
 
-      processParam :: Parser a -> [a] -> TokenParser -> (ParseResult a, [a])
-      processParam p acc' tok = processParam' (callParse p tok) acc'
-        where
-          processParam' (Failed err) acc = (Failed err, acc)
-          processParam' (Done ntok) acc = (Done ntok, acc)
-          processParam' (MoreData np) acc = (MoreData np, acc)
-          processParam' (Unexpected el ntok) acc = (Unexpected el ntok, acc)
-          processParam' (Yield v np) acc = processParam' np (v:acc)
 
 instance Alternative Parser where
   empty = ignoreVal
