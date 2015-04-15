@@ -15,5 +15,6 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Main
   -- other-modules:
-  build-depends:       base >=4.7 && <4.8, bytestring, text, scientific
+  build-depends:       base >=4.7 && <4.8, bytestring, text, aeson, vector,
+                       unordered-containers
   default-language:    Haskell2010

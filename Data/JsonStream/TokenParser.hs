@@ -3,26 +3,22 @@
 
 module Data.JsonStream.TokenParser (
     Element(..)
-  , JValue(..)
   , TokenResult(..)
   , tokenParser
 ) where
 
-import Control.Applicative
+import           Control.Applicative
 import           Control.Monad            (replicateM, unless, (>=>))
+import qualified Data.Aeson               as AE
 import qualified Data.ByteString.Char8    as BS
-import           Data.Char                (isDigit, isDigit,
-                                           isLower, isSpace)
+import           Data.Char                (isDigit, isDigit, isLower, isSpace)
 import qualified Data.Text                as T
 import           Data.Text.Encoding       (decodeUtf8With, encodeUtf8)
 import           Data.Text.Encoding.Error (lenientDecode)
-import Data.Scientific
 
-data JValue = JString T.Text | JNumber Scientific | JBool Bool | JNull
-              | JArray [JValue] | JObject [(T.Text, JValue)] deriving (Show, Eq)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
-               | ObjectKey T.Text | JValue JValue
+               | ObjectKey T.Text | JValue AE.Value
                deriving (Show, Eq)
 
 -- Internal Interface for parsing monad
@@ -143,9 +139,9 @@ parseIdent = do
     if | isBreakChar nextchar -> toTemp ident -- We found a barrier -> parse
        | otherwise -> failTok
   where
-    toTemp "true" = yield $ JValue $ JBool True
-    toTemp "false" = yield $ JValue $ JBool False
-    toTemp "null" = yield $ JValue JNull
+    toTemp "true" = yield $ JValue $ AE.Bool True
+    toTemp "false" = yield $ JValue $ AE.Bool False
+    toTemp "null" = yield $ JValue AE.Null
     toTemp _ = failTok
 
 parseUnicode :: TokenParser Char
@@ -167,7 +163,7 @@ chooseKeyOrValue text = do
   _ <- getWhile isSpace
   chr <- peekChar
   if | chr == ':' -> yield $ ObjectKey text
-     | otherwise -> yield $ JValue $ JString text
+     | otherwise -> yield $ JValue $ AE.String text
 
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
 parseString :: TokenParser ()
@@ -208,7 +204,7 @@ parseNumber = do
     fractional <- parseFractional
     expon <- parseExpon
     let res = BS.concat [sign, wholepart, fractional, expon]
-    yield $ JValue $ JNumber $ read $ BS.unpack res
+    yield $ JValue $ AE.Number $ read $ BS.unpack res
   where
     parseSign = do
       chr <- peekChar

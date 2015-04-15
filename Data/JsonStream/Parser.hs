@@ -18,10 +18,13 @@ module Data.JsonStream.Parser (
   , toList
 ) where
 
-import Control.Applicative
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
+import           Control.Applicative
+import qualified Data.Aeson                  as AE
+import qualified Data.ByteString             as BS
+import qualified Data.ByteString.Lazy        as BL
+import qualified Data.HashMap.Strict         as HMap
+import qualified Data.Text                   as T
+import qualified Data.Vector                 as Vec
 
 import           Data.JsonStream.TokenParser
 
@@ -149,16 +152,16 @@ objectWithKey name valparse = object' itemFn
       | otherwise = ignoreVal
 
 -- | Parses underlying values and generates a JValue
-value :: Parser JValue
+value :: Parser AE.Value
 value = Parser value'
   where
     value' (TokFailed _) = Failed "Value - token failed"
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) =
-        JArray <$> callParse (toList (array value)) tok
+        AE.Array . Vec.fromList <$> callParse (toList (array value)) tok
     value' tok@(PartialResult ObjectBegin _ _) =
-        JObject <$> callParse (toList (objectItems value)) tok
+        AE.Object . HMap.fromList <$> callParse (toList (objectItems value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
 
 -- | Skip value; cheat to avoid parsing and make it faster
