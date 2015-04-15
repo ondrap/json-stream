@@ -5,8 +5,8 @@ import           Control.Applicative
 import qualified Data.ByteString.Char8    as BS
 import qualified Data.Text                as T
 
-import Data.JStream.Parser
-import Data.JStream.TokenParser
+import Data.JsonStream.Parser
+import Data.JsonStream.TokenParser
 
 execIt :: Show a => [BS.ByteString] -> Parser a -> IO ()
 execIt input parser = loop input $ runParser parser

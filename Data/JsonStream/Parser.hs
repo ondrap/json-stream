@@ -1,5 +1,5 @@
 {-# LANGUAGE TupleSections #-}
-module Data.JStream.Parser (
+module Data.JsonStream.Parser (
     Parser
   , ParseOutput(..)
   , runParser
@@ -23,7 +23,7 @@ import qualified Data.Text as T
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 
-import           Data.JStream.TokenParser
+import           Data.JsonStream.TokenParser
 
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenParser)
                     | Failed String
@@ -244,7 +244,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
     loop _ (ParseFailed err) = error err
     loop rest (ParseYield v np) = v : loop rest np
 
--- | Parse input using IO monad or transformers on IO. Calls "fail" on error.
--- parseIOInput :: MonadIO m => Parser a -> IO ByteString -> m (a, m a)
+-- | Parse input using IO monad or transformers on IO.
+-- Calls "fail" on error, return Left on end of input, Right on value.
+-- parseIOInput :: MonadIO m => Parser a -> IO ByteString -> m (Either ByteString (a, m a))
 -- parseIOInput parser newdata =
 --   where

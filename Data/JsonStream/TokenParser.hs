@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Data.JStream.TokenParser (
+module Data.JsonStream.TokenParser (
     Element(..)
   , JValue(..)
   , TokenParser(..)
