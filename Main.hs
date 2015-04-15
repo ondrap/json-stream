@@ -4,6 +4,7 @@
 import           Control.Applicative
 import qualified Data.ByteString.Char8    as BS
 import qualified Data.Text                as T
+import qualified Data.Aeson as AE
 
 import Data.JsonStream.Parser
 import Data.JsonStream.TokenParser
@@ -19,7 +20,7 @@ execIt input parser = loop input $ runParser parser
         putStrLn $ "Got: " ++ show item
         loop dta np
 
-testParser = (,) <$> array value <*> array value
+-- testParser = (,) <$> array value <*> array value
 
 tokenTest :: [BS.ByteString] -> [TokenResult]
 tokenTest chunks = reverse $ test [] (tail chunks) (tokenParser $ head chunks)
@@ -32,11 +33,11 @@ tokenTest chunks = reverse $ test [] (tail chunks) (tokenParser $ head chunks)
 
 main :: IO ()
 main = do
-  let test = " [ true, false, [null,4,5], 13, 12.4, -3, -3.5e-1,  \"abcd\" ]    "
-  -- let test = "[1,2,false,true,null,6,7]"
+  -- let test = " [ true, false, [null,4,5], 13, 12.4, -3, -3.5e-1,  \"abcd\" ]    "
+  let test = "[1,2,6,7]"
   -- print $ tokenTest [test]
 
-  let x = parseByteString (arrayWithIndex 2 ((,) <$> array value <*> arrayWithIndex 0 value)) test
+  let x = parseByteString (value) test :: [[Int]]
   print x
 
   return ()

@@ -151,9 +151,9 @@ objectWithKey name valparse = object' itemFn
       | key == name = valparse
       | otherwise = ignoreVal
 
--- | Parses underlying values and generates a JValue
-value :: Parser AE.Value
-value = Parser value'
+-- | Parses underlying values and generates a AE.Value
+aeValue :: Parser AE.Value
+aeValue = Parser value'
   where
     value' (TokFailed _) = Failed "Value - token failed"
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
@@ -163,6 +163,19 @@ value = Parser value'
     value' tok@(PartialResult ObjectBegin _ _) =
         AE.Object . HMap.fromList <$> callParse (toList (objectItems value)) tok
     value' (PartialResult el ntok _) = Unexpected el ntok
+
+-- | Convert a value fromjson, fail with Failed if it doesn't work
+value :: AE.FromJSON a => Parser a
+value = Parser $ \ntok -> loop (callParse aeValue ntok)
+  where
+    loop (Done ntp) = Done ntp
+    loop (Failed err) = Failed err
+    loop (Unexpected el b) = Unexpected el b
+    loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
+    loop (Yield v np) =
+      case AE.fromJSON v of
+        AE.Error err -> Failed err
+        AE.Success res -> Yield res (loop np)
 
 -- | Skip value; cheat to avoid parsing and make it faster
 ignoreVal :: Parser a

@@ -1,5 +1,3 @@
-- [ ] Change to use Aeson values, add aeson integration
-
 - Tests
   - [ ] Combinators
   - [ ] <|>, <*>
