@@ -177,7 +177,7 @@ chooseKeyOrValue text = do
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
 parseString :: TokenParser ()
 parseString = do
-    _ <- pickChar -- remove leading '"'
+    -- leading '"' removed upstream
     firstpart <- getWhile' (\c -> c /= '"' && c /= '\\' )
     handleString [firstpart]
   where
@@ -272,6 +272,7 @@ peekCharInMain = TokenParser handle
       | chr == '{' = (PartialResult' ObjectBegin contparse ctx, st)
       | chr == '}' = (PartialResult' ObjectEnd contparse ctx, st)
       | chr == ',' || isSpace chr = handle (State (BS.dropWhile (\c -> c == ',' || isSpace c) ctx) ctx)
+      | chr == '"' = runTokParser (parseString >> peekCharInMain) (State rest ctx)
       | otherwise   = (Intermediate' (BS.head dta), st)
       where
         chr = BS.head dta
@@ -284,7 +285,6 @@ mainParser :: TokenParser ()
 mainParser = do
   chr <- peekCharInMain
   case chr of
-    '"' -> parseString
     't' -> parseIdent
     'f' -> parseIdent
     'n' -> parseIdent
