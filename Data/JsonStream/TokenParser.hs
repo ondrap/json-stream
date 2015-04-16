@@ -130,13 +130,10 @@ getWhile :: (Char -> Bool) -> TokenParser BS.ByteString
 getWhile predicate = loop []
   where
     loop acc = do
-      chr <- peekChar
-      if predicate chr
-        then do
-          dta <- getWhile' predicate
-          loop (dta:acc)
-        else
-          return $ BS.concat $ reverse acc
+      dta <- getWhile' predicate
+      if BS.null dta
+        then return $ BS.concat $ reverse acc
+        else loop (dta:acc)
 
 -- | Parse unquoted identifier - true/false/null
 parseIdent :: TokenParser ()
