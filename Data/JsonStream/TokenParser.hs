@@ -301,7 +301,7 @@ mainParser = do
     _| isDigit chr -> parseNumber
      | otherwise -> failTok
 
--- | Incremental lexer 
+-- | Incremental lexer
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = handle $ runTokParser mainParser (State dta dta)
   where

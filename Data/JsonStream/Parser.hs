@@ -1,14 +1,33 @@
+{-# LANGUAGE BangPatterns  #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE BangPatterns #-}
+
+-- |
+-- Module : Data.JsonStream.Parser
+-- License     : BSD-style
+--
+-- Maintainer  : palkovsky.ondrej@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- An incremental applicative-style JSON parser, suitable for high performance
+-- memory efficient stream parsing.
+--
+-- The parser is using "Data.Aeson" types and 'FromJSON' instance, it can be
+-- easily combined with aeson monadic parsing instances when appropriate.
 
 module Data.JsonStream.Parser (
+    -- * How to use this library
+    -- $use
+
+    -- * The @Parser@ type
     Parser
   , ParseOutput(..)
+    -- * Parsing functions
   , runParser
   , runParser'
   , parseByteString
   , parseLazyByteString
-
+    -- * Basic JSON parsers
   , value
   , objectWithKey
   , objectItems
@@ -16,7 +35,7 @@ module Data.JsonStream.Parser (
   , array
   , arrayWithIndex
   , indexedArray
-
+    -- * Parsing modifiers
   , filterI
   , toList
   , defaultValue
@@ -33,6 +52,7 @@ import qualified Data.Vector                 as Vec
 
 import           Data.JsonStream.TokenParser
 
+-- | Private parsing result
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     | Failed String
                     | Done TokenResult
@@ -46,6 +66,11 @@ instance Functor ParseResult where
   fmap _ (Done tok) = Done tok
   fmap f (Yield v np) = Yield (f v) (fmap f np)
   fmap _ (UnexpectedEnd el tok) = UnexpectedEnd el tok
+
+-- | A representation of the parser.
+newtype Parser a = Parser {
+    callParse :: TokenResult -> ParseResult a
+}
 
 instance Functor Parser where
   fmap f (Parser p) = Parser $ \d -> fmap f (p d)
@@ -92,10 +117,6 @@ instance Alternative Parser where
       process (UnexpectedEnd el ntok) (UnexpectedEnd _ _) = UnexpectedEnd el ntok
       process _ _ = error "Unexpected error in parallel processing <|>"
 
-newtype Parser a = Parser {
-    callParse :: TokenResult -> ParseResult a
-}
-
 array' :: (Int -> Parser a) -> Parser a
 array' valparse = Parser $ \tp ->
   case tp of
@@ -113,11 +134,11 @@ array' valparse = Parser $ \tp ->
     arrcontent _ (UnexpectedEnd ArrayEnd ntp) = Done ntp
     arrcontent _ (UnexpectedEnd el _) = Failed ("Array - UnexpectedEnd: " ++ show el)
 
--- | Match all items of an array
+-- | Match all items of an array.
 array :: Parser a -> Parser a
 array valparse = array' (const valparse)
 
--- | Match n'th item of an array
+-- | Match n'th item of an array.
 arrayWithIndex :: Int -> Parser a -> Parser a
 arrayWithIndex idx valparse = array' itemFn
   where
@@ -125,7 +146,7 @@ arrayWithIndex idx valparse = array' itemFn
       | aidx == idx = valparse
       | otherwise = ignoreVal
 
--- | Match all items of an array, add index to output
+-- | Match all items of an array, add index to output.
 indexedArray :: Parser a -> Parser (Int, a)
 indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
 
@@ -154,15 +175,15 @@ object' valparse = Parser $ \tp ->
       | otherwise = Failed ("Array - unexpected token: " ++ show el)
 
 
--- | Match all key-value pairs of an object, return them as a tuple
+-- | Match all key-value pairs of an object, return them as a tuple.
 objectItems :: Parser a -> Parser (T.Text, a)
 objectItems valparse = object' $ \(!key) -> (key,) <$> valparse
 
--- | Match all key-value pairs of an object, return only values
+-- | Match all key-value pairs of an object, return only values.
 objectValues :: Parser a -> Parser a
 objectValues valparse = object' (const valparse)
 
--- | Match only specific key of an object
+-- | Match only specific key of an object.
 objectWithKey :: T.Text -> Parser a -> Parser a
 objectWithKey name valparse = object' itemFn
   where
@@ -185,7 +206,7 @@ aeValue = Parser value'
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = Failed ("aeValue - unexpected token: " ++ show el)
 
--- | Convert a value fromjson, fail with Failed if it doesn't work
+-- | Match 'FromJSON' value.
 value :: AE.FromJSON a => Parser a
 value = Parser $ \ntok -> loop (callParse aeValue ntok)
   where
@@ -220,7 +241,7 @@ ignoreVal = Parser $ handleTok 0
       | elm == ArrayEnd || elm == ObjectEnd = handleTok (level - 1) ntok
     handleTok _ _ = Failed "UnexpectedEnd "
 
--- | Fetch yields of a function and return them as list
+-- | Fetch yields of a function and return them as list.
 toList :: Parser a -> Parser [a]
 toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
@@ -242,7 +263,7 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
       | cond v = Yield v (loop np)
       | otherwise = loop np
 
--- | Returns a value if none is found upstream
+-- | Returns a value if none is found upstream.
 defaultValue :: a -> Parser a -> Parser a
 defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valparse ntok)
   where
@@ -253,7 +274,7 @@ defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valpars
     loop found (MoreData (Parser np, ntok)) = MoreData (Parser (loop found . np), ntok)
     loop _ (Yield v np) = Yield v (loop True np)
 
--- | Tries to catch an error in underlying parser
+-- | Catch an error in underlying parser.
 catchFail :: Parser a -> Parser a
 catchFail valparse = Parser $ \tok -> process (callParse valparse tok) (callParse ignoreVal tok)
   where -- Call ignoreVal in parallel, switch to it if the first parser fails
@@ -269,12 +290,13 @@ catchFail valparse = Parser $ \tok -> process (callParse valparse tok) (callPars
         MoreData (Parser (process p1 . callParse np2), ntok2)
     process _ _ = Failed "Unexpected error in parallel processing catchFail."
 
-data ParseOutput a = ParseYield a (ParseOutput a)
-                    | ParseNeedData (BS.ByteString -> ParseOutput a)
-                    | ParseFailed String
-                    | ParseDone BS.ByteString
+-- | Result of parsing. Contains continuations to continue parsing.
+data ParseOutput a = ParseYield a (ParseOutput a) -- ^ Returns a value from a parser.
+                    | ParseNeedData (BS.ByteString -> ParseOutput a) -- ^ Parser needs more data to continue parsing.
+                    | ParseFailed String -- ^ Parsing failed, error is reported.
+                    | ParseDone BS.ByteString -- ^ Parsing finished, unparsed data is returned.
 
--- | Run streaming parser with initial input
+-- | Run streaming parser with initial input.
 runParser' :: Parser a -> BS.ByteString -> ParseOutput a
 runParser' parser startdata = parse $ callParse parser (tokenParser startdata)
   where
@@ -286,7 +308,7 @@ runParser' parser startdata = parse $ callParse parser (tokenParser startdata)
     parse (Done (TokFailed rest)) = ParseDone rest
     parse (Done (TokMoreData _ rest)) = ParseDone rest
 
--- | Run streaming parser, immediately returns ParseMoreData
+-- | Run streaming parser, immediately returns 'ParseNeedData'.
 runParser :: Parser a -> ParseOutput a
 runParser parser = runParser' parser BS.empty
 
@@ -309,3 +331,32 @@ parseLazyByteString parser input = loop chunks (runParser parser)
     loop _ (ParseDone _) = []
     loop _ (ParseFailed err) = error err
     loop rest (ParseYield v np) = v : loop rest np
+
+
+-- $use
+--
+-- > >>> parseByteString value "[1,2,3]" :: [[Int]]
+-- > [[1,2,3]]
+-- The 'value' parser matches any 'AE.FromJSON' value. The above command is essentially
+-- identical to the aeson decode function; the parsing process can generate more
+-- objects, therefore the results is [a].
+--
+-- json-stream style parsing would rather look like this:
+--
+-- > >>> parseByteString (array value) "[1,2,3]" :: [Int]
+-- > [1,2,3]
+--
+-- Parsers can be combinated using  '<*>' and '<|>' operators. These operators cause
+-- parallel parsing and yield some combination of the parsed values.
+--
+-- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
+-- > >>> let parser = array $ (,) <$> objectWithKey "name" value
+-- >                              <*> objectWithKey "age" value
+-- > >>> parseByteString  parser text :: [(Text,Int)]
+-- > [("John",20),("Frank",30)]
+--
+-- When parsing larger values, it is advisable to use lazy ByteStrings as the chunking
+-- of the ByteStrings causes the parsing to continue more efficently because less state
+-- is needed to be held in memory with parallel parsers.
+--
+-- More examples are available on <https://github.com/ondrap/json-stream>.

@@ -2,21 +2,14 @@ name:                json-stream
 version:             0.1.0.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
-                     Parsing rule is specified simply using a few functions in
-                     applicative form.
+                     Parsing grammar in applicative form.
 
-                     Although the parser is applicative, it is compatibile with
-                     aeson and its FromJSON class (in fact, json-stream internally
-                     parses the values into aeson types). It is perfectly possible
-                     to combine the parser with aeson monadic style.
+                     The parser is compatibile with
+                     aeson and its FromJSON class. It is possible to use aeson
+                     monadic parsing when appropriate.
 
                      The parser supports incremental parsing while using as little
-                     memory as possible. The performance is comparable to aeson,
-                     it is mostly faster when used correctly.
-
-                     The parser is easy on JSON grammer, it does not necesarilly
-                     report error when badly-formed JSON is encountered. This
-                     allows higher parsing performance.
+                     memory as possible with performance comparable to aeson.
 
 homepage:            https://github.com/ondrap/json-stream
 license:             BSD3
