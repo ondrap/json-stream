@@ -9,7 +9,7 @@ module Data.JsonStream.TokenParser (
 ) where
 
 import           Control.Applicative
-import           Control.Monad         (replicateM, when, (>=>), void)
+import           Control.Monad         (replicateM, when, (>=>))
 import qualified Data.Aeson            as AE
 import qualified Data.ByteString       as BSW
 import qualified Data.ByteString.Char8 as BS
