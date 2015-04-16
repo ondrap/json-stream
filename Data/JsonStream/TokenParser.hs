@@ -101,12 +101,13 @@ peekChar = TokenParser handle
 
 {-# INLINE pickChar #-}
 pickChar :: TokenParser Char
-pickChar = do
-    chr <- peekChar
-    dropchar
-    return chr
+pickChar = TokenParser handle
   where
-    dropchar = TokenParser $ \s -> (Intermediate' (), s{stData=BS.tail (stData s)})
+    handle st@(State dta context)
+      | BS.null dta = (TokMoreData' (\newdta -> TokenParser $ \_ -> handle (State newdta (BS.append context newdta)))
+                                     context
+                        , st)
+      | otherwise   = (Intermediate' (BS.head dta), State (BS.tail dta) context)
 
 {-# INLINE yield #-}
 yield :: Element -> TokenParser ()
