@@ -36,7 +36,7 @@ import           Data.JsonStream.TokenParser
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     | Failed String
                     | Done TokenResult
-                    | Yield v (ParseResult v)
+                    | Yield !v (ParseResult v)
                     | UnexpectedEnd Element TokenResult -- Thrown on ArrayEnd and ObjectEnd
 
 
