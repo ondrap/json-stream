@@ -1,2 +1,0 @@
-- Tests
-  - [ ] Measure performance, compare with Aeson

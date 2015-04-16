@@ -271,8 +271,7 @@ peekCharInMain = TokenParser handle
       | chr == ']' = (PartialResult' ArrayEnd contparse ctx, st)
       | chr == '{' = (PartialResult' ObjectBegin contparse ctx, st)
       | chr == '}' = (PartialResult' ObjectEnd contparse ctx, st)
-      | chr == ',' = handle (State (BS.dropWhile (\c -> c == ',' || isSpace c) ctx) ctx)
-      | isSpace chr = handle (State (BS.dropWhile (\c -> c == ' ' || isSpace c) ctx) ctx)
+      | chr == ',' || isSpace chr = handle (State (BS.dropWhile (\c -> c == ',' || isSpace c) ctx) ctx)
       | otherwise   = (Intermediate' (BS.head dta), st)
       where
         chr = BS.head dta
