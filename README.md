@@ -14,10 +14,6 @@ which allows to parse only those parts of JSON that are of interest while skippi
 The parsing process uses the least amount of memory possible and is completely lazy. It does not perfectly
 check for JSON syntax and the behaviour on incorrect JSON input is undefined. In particular:
 
-- I have not found a function in haskell that would have the signature `ByteString -> Maybe Text`.
-  Parsing incorrect unicode usually casuses an exception which is rather inconvenient.
-  Json-stream uses lenientDecoding that replaces incorrect unicode characters instead of throwing exception.
-
 - Both the tokenizer and the actual parser are very lightweight and simple. This parser will
   not complain in many cases on badly formed input. **The result on badly formed input is undefined.**
   However, the parser will complain if the parsed structure does not conform to the specified parser.
