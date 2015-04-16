@@ -36,6 +36,7 @@ library
                        , vector
                        , unordered-containers
                        , hspec
+                       , scientific
   default-language:    Haskell2010
 
 test-suite spec

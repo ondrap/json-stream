@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -8,12 +9,14 @@ module Data.JsonStream.TokenParser (
 ) where
 
 import           Control.Applicative
-import           Control.Monad            (replicateM, unless, (>=>))
-import qualified Data.Aeson               as AE
-import qualified Data.ByteString.Char8    as BS
-import           Data.Char                (isDigit, isDigit, isLower, isSpace)
-import qualified Data.Text                as T
-import           Data.Text.Encoding       (decodeUtf8', encodeUtf8)
+import           Control.Monad         (replicateM, when, (>=>))
+import qualified Data.Aeson            as AE
+import qualified Data.ByteString       as BSW
+import qualified Data.ByteString.Char8 as BS
+import           Data.Char             (isDigit, isDigit, isLower, isSpace)
+import           Data.Scientific       (scientific)
+import qualified Data.Text             as T
+import           Data.Text.Encoding    (decodeUtf8', encodeUtf8)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
                | ObjectKey T.Text | JValue AE.Value
@@ -207,42 +210,53 @@ parseString = do
 {-# INLINE parseNumber #-}
 parseNumber :: TokenParser ()
 parseNumber = do
-    sign <- parseSign
-    wholepart <- parseInt
-    fractional <- parseFractional
-    expon <- parseExpon
-    let res = BS.concat [sign, wholepart, fractional, expon]
-    yield $ JValue $ AE.Number $ read $ BS.unpack res
+    tnumber <- getWhile (\c -> isDigit c || c == '.' || c == '+' || c == '-' || c == 'e' || c == 'E')
+    let
+      ([(texp, _), (frac, frdigits), (num, numdigits), (csign, _)], rest) =
+              foldl parseStep ([], tnumber) [parseSign, parseDecimal, parseFract, parseE]
+    when (numdigits == 0 || not (BS.null rest)) failTok
+
+    let dpart = fromIntegral csign * (fromIntegral num * (10 ^ frdigits) + fromIntegral frac) :: Integer
+        e = texp - frdigits
+    yield $ JValue $ AE.Number $ scientific dpart e
   where
-    parseSign = do
-      chr <- peekChar
-      if | chr == '-' -> pickChar >> return "-"
-         | chr == '+' -> pickChar >> return "+"
-         | otherwise -> return ""
+    parseStep :: ([(Int, Int)], BS.ByteString) -> (BS.ByteString -> ((Int, Int), BS.ByteString)) -> ([(Int, Int)], BS.ByteString)
+    parseStep (lst, txt) f =
+      let (newi, rest) = f txt
+      in (newi:lst, rest)
 
-    parseExpon = do
-      chr <- peekChar
-      if chr == 'e' || chr == 'E'
-        then do
-          _ <- pickChar
-          sign <- parseSign
-          num <- parseInt
-          return $ BS.concat ["E", sign, num]
-        else return ""
+    parseFract txt
+      | BS.null txt = ((0, 0), txt)
+      | BS.head txt == '.' = parseDecimal (BS.tail txt)
+      | otherwise = ((0,0), txt)
 
-    parseFractional = do
-      chr <- peekChar
-      if chr == '.'
-        then do
-          _ <- pickChar
-          num <- parseInt
-          return $ BS.cons '.' num
-        else return ""
+    parseE txt
+      | BS.null txt = ((0, 0), txt)
+      | firstc == 'e' || firstc == 'E' =
+              let ((sign, d1), rest) = parseSign (BS.tail txt)
+                  ((dnum, d2), trest) = parseDecimal rest
+              in ((dnum * sign, d1 + d2), trest)
+      | otherwise = ((0,0), txt)
+      where
+        firstc = BS.head txt
 
-    parseInt = do
-      chr <- peekChar
-      unless (isDigit chr) failTok
-      getWhile isDigit
+    parseSign txt
+      | BS.null txt = ((1, 0), txt)
+      | BS.head txt == '+' = ((1, 1), BS.tail txt)
+      | BS.head txt == '-' = ((-1, 1), BS.tail txt)
+      | otherwise = ((1, 0), txt)
+
+    parseDecimal txt
+      | BS.null txt = ((0, 0), txt)
+      | otherwise = parseNum txt (0,0)
+
+    parseNum txt (!start, !digits)
+      | BS.null txt = ((start, digits), txt)
+      | dchr >= 48 && dchr <= 57 = parseNum (BS.tail txt) (start * 10 + fromIntegral (dchr - 48), digits + 1)
+      | otherwise = ((start, digits), txt)
+      where
+        dchr = BSW.head txt
+
 
 {-# INLINE mainParser #-}
 mainParser :: TokenParser ()
