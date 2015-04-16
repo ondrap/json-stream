@@ -3,15 +3,20 @@ version:             0.1.0.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing rule is specified simply using a few functions in
-                     applicative form without any need for TemplateHaskell.
+                     applicative form.
 
                      Although the parser is applicative, it is compatibile with
                      aeson and its FromJSON class (in fact, json-stream internally
                      parses the values into aeson types). It is perfectly possible
-                     to use aeson monadic parsing for parts of the parsing tree.
+                     to combine the parser with aeson monadic style.
 
                      The parser supports incremental parsing while using as little
-                     memory as possible.
+                     memory as possible. The performance is comparable to aeson,
+                     it is mostly faster when used correctly.
+
+                     The parser is easy on JSON grammer, it does not necesarilly
+                     report error when badly-formed JSON is encountered. This
+                     allows higher parsing performance.
 
 homepage:            https://github.com/ondrap/json-stream
 license:             BSD3

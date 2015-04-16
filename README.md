@@ -1,7 +1,7 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
 > Current state: the library should be normally usable, the parsing is
-> from 40% faster to 40% slower than aeson (depending on the parser grammer).
+> from 40% faster to 30% slower than aeson (depending on the parser grammer).
 > In general if you use the applicative parser grammer, it will have lower
 > memory consumption and it will be faster. When you use streaming, the lower
 > memory consumption becomes significant.
@@ -18,13 +18,14 @@ any change in code and enjoy incremental parsing. The real strength is in the ap
 which allows to parse only those parts of JSON that are of interest while skipping what is not needed.
 
 The parsing process uses the least amount of memory possible and is completely lazy. It does not perfectly
-check for JSON syntax and the behaviour on incorrect JSON input is undefined. In particular:
+check for JSON syntax and the behaviour on incorrect JSON input is undefined (it cheats quite a lot).
+**The result on badly formed input is undefined.**
 
-- Both the tokenizer and the actual parser are very lightweight and simple. This parser will
-  not complain in many cases on badly formed input. **The result on badly formed input is undefined.**
-  However, the parser will complain if the parsed structure does not conform to the specified parser.
-  E.g. if the parser expects an array and a number is found, it is reported as an error.
+- E.g. if the parser expects an array and a number is found, it is reported as an error.
   Not finding a particular key in an object (`objectWithKey`) will not be reported as an error.
+- The ',' character in the lexer is treated as white-space.
+- When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
+  Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
 
 ```haskell
 -- The parseByteString function always returns a list of 'things'.

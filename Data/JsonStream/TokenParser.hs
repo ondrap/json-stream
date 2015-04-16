@@ -117,26 +117,31 @@ yield el = TokenParser $ \state@(State dta ctx) -> (PartialResult' el (contparse
     contparse dta = TokenParser $ const (Intermediate' (), State dta dta )
 
 -- | Return SOME input satisfying predicate or none, if the next element does not satisfy
+-- Return tuple (str satisfying predicate, true_if_next_char_does_not_satisfy)
 {-# INLINE getWhile' #-}
-getWhile' :: (Char -> Bool) -> TokenParser BS.ByteString
+getWhile' :: (Char -> Bool) -> TokenParser (BS.ByteString, Bool)
 getWhile' predicate = do
   char <- peekChar
   if predicate char then getBuf
-                    else return ""
+                    else return ("", True)
   where
     getBuf = TokenParser $ \(State dta ctx) ->
         let (st,rest) = BS.span predicate dta
-        in (Intermediate' st, State rest ctx)
+        in (Intermediate' (st, not (BS.null rest)), State rest ctx)
 
 -- | Read ALL input satisfying predicate
 {-# INLINE getWhile #-}
 getWhile :: (Char -> Bool) -> TokenParser BS.ByteString
-getWhile predicate = loop []
+getWhile predicate = do
+  (dta, complete) <- getWhile' predicate
+  if complete
+    then return dta
+    else loop [dta]
   where
     loop acc = do
-      dta <- getWhile' predicate
-      if BS.null dta
-        then return $ BS.concat $ reverse acc
+      (dta, complete) <- getWhile' predicate
+      if complete
+        then return $ BS.concat $ reverse (dta:acc)
         else loop (dta:acc)
 
 -- | Parse unquoted identifier - true/false/null
@@ -178,17 +183,21 @@ chooseKeyOrValue text = do
 parseString :: TokenParser ()
 parseString = do
     -- leading '"' removed upstream
-    firstpart <- getWhile' (\c -> c /= '"' && c /= '\\' )
-    handleString [firstpart]
+    (firstpart, _) <- getWhile' (\c -> c /= '"' && c /= '\\' )
+    chr <- peekChar
+    if chr == '"'
+      then pickChar >> handleDecode firstpart
+      else handleString [firstpart]
   where
+    handleDecode str = case decodeUtf8' str of
+          Left _ -> failTok
+          Right val -> chooseKeyOrValue val
     handleString acc = do
       chr <- peekChar
       case chr of
         '"' -> do
             _ <- pickChar
-            case decodeUtf8' (BS.concat $ reverse acc) of
-              Left _ -> failTok
-              Right val -> chooseKeyOrValue val
+            handleDecode (BS.concat $ reverse acc)
         '\\' -> do
             _ <- pickChar
             specchr <- pickChar
@@ -292,6 +301,7 @@ mainParser = do
     _| isDigit chr -> parseNumber
      | otherwise -> failTok
 
+-- | Incremental lexer 
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = handle $ runTokParser mainParser (State dta dta)
   where
