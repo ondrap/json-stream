@@ -1,7 +1,7 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
 > Current state: the library should be normally usable, the parsing is
-> from 40% faster to 50% slower than aeson (depending on the parser grammer).
+> from 40% faster to 40% slower than aeson (depending on the parser grammer).
 > In general if you use the applicative parser grammer, it will have lower
 > memory consumption and it will be faster. When you use streaming, the lower
 > memory consumption becomes significant.

@@ -9,7 +9,7 @@ module Data.JsonStream.TokenParser (
 ) where
 
 import           Control.Applicative
-import           Control.Monad         (replicateM, when, (>=>))
+import           Control.Monad         (replicateM, when, (>=>), void)
 import qualified Data.Aeson            as AE
 import qualified Data.ByteString       as BSW
 import qualified Data.ByteString.Char8 as BS
@@ -209,7 +209,6 @@ parseString = do
     parseSpecChar 'u' = parseUnicode
     parseSpecChar c = return c
 
-{-# INLINE parseNumber #-}
 parseNumber :: TokenParser ()
 parseNumber = do
     tnumber <- getWhile (\c -> isDigit c || c == '.' || c == '+' || c == '-' || c == 'e' || c == 'E')
@@ -259,27 +258,41 @@ parseNumber = do
       where
         dchr = BSW.head txt
 
+{-# INLINE peekCharInMain #-}
+-- Specialized version of peek char for main function so that we get faster performance
+peekCharInMain :: TokenParser Char
+peekCharInMain = TokenParser handle
+  where
+    handle st@(State dta ctx)
+      | BS.null dta = (TokMoreData' (\newdta -> TokenParser $ \_ -> handle (State newdta (BS.append ctx newdta)))
+                                     ctx
+                        , st)
+      | chr == '[' = (PartialResult' ArrayBegin contparse ctx, st)
+      | chr == ']' = (PartialResult' ArrayEnd contparse ctx, st)
+      | chr == '{' = (PartialResult' ObjectBegin contparse ctx, st)
+      | chr == '}' = (PartialResult' ObjectEnd contparse ctx, st)
+      | chr == ',' = handle (State (BS.dropWhile (\c -> c == ',' || isSpace c) ctx) ctx)
+      | isSpace chr = handle (State (BS.dropWhile (\c -> c == ' ' || isSpace c) ctx) ctx)
+      | otherwise   = (Intermediate' (BS.head dta), st)
+      where
+        chr = BS.head dta
+        rest = BS.tail dta
+        -- Use data as new context
+        contparse = TokenParser $ const $ handle (State rest rest)
 
 {-# INLINE mainParser #-}
 mainParser :: TokenParser ()
 mainParser = do
-  chr <- peekChar
+  chr <- peekCharInMain
   case chr of
-    '[' -> pickChar >> yield ArrayBegin
-    ']' -> pickChar >> yield ArrayEnd
-    '{' -> pickChar >> yield ObjectBegin
-    '}' -> pickChar >> yield ObjectEnd
-    ',' -> pickChar >> mainParser
     '"' -> parseString
     't' -> parseIdent
     'f' -> parseIdent
     'n' -> parseIdent
     '-' -> parseNumber
     _| isDigit chr -> parseNumber
-     | isSpace chr -> getWhile' isSpace >> mainParser
      | otherwise -> failTok
 
-{-# INLINE tokenParser #-}
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = handle $ runTokParser mainParser (State dta dta)
   where
