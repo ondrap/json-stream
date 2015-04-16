@@ -176,8 +176,9 @@ chooseKeyOrValue text = do
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
 parseString :: TokenParser ()
 parseString = do
-    _ <- pickChar
-    handleString []
+    _ <- pickChar -- remove leading '"'
+    firstpart <- getWhile' (\c -> c /= '"' && c /= '\\' )
+    handleString [firstpart]
   where
     handleString acc = do
       chr <- peekChar
@@ -261,17 +262,20 @@ parseNumber = do
 {-# INLINE mainParser #-}
 mainParser :: TokenParser ()
 mainParser = do
-  _ <- getWhile' isSpace
   chr <- peekChar
-  if | chr == '[' -> pickChar >> yield ArrayBegin
-     | chr == ']' -> pickChar >> yield ArrayEnd
-     | chr == '{' -> pickChar >> yield ObjectBegin
-     | chr == '}' -> pickChar >> yield ObjectEnd
-     | chr == ',' -> pickChar >> mainParser
-     | isDigit chr || chr == '-' -> parseNumber
-     | chr == '"' -> parseString
-     | chr == 't' || chr == 'f' || chr == 'n'-> parseIdent
-     | isSpace chr -> mainParser
+  case chr of
+    '[' -> pickChar >> yield ArrayBegin
+    ']' -> pickChar >> yield ArrayEnd
+    '{' -> pickChar >> yield ObjectBegin
+    '}' -> pickChar >> yield ObjectEnd
+    ',' -> pickChar >> mainParser
+    '"' -> parseString
+    't' -> parseIdent
+    'f' -> parseIdent
+    'n' -> parseIdent
+    '-' -> parseNumber
+    _| isDigit chr -> parseNumber
+     | isSpace chr -> getWhile' isSpace >> mainParser
      | otherwise -> failTok
 
 {-# INLINE tokenParser #-}
