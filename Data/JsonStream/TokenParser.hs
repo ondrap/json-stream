@@ -168,9 +168,9 @@ parseUnicode = do
 {-# INLINE chooseKeyOrValue #-}
 chooseKeyOrValue :: T.Text -> TokenParser ()
 chooseKeyOrValue text = do
-  _ <- getWhile isSpace
   chr <- peekChar
   if | chr == ':' -> pickChar >> yield (ObjectKey text)
+     | isSpace chr -> getWhile' isSpace >> chooseKeyOrValue text
      | otherwise -> yield $ JValue $ AE.String text
 
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string

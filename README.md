@@ -1,12 +1,13 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
 > Current state: the library should be normally usable, the parsing is
-> about 10%-100% slower than aeson (depending on the parser grammer).
+> from 25% faster to 50% slower than aeson (depending on the parser grammer).
 > In general if you use the applicative parser grammer, it will have lower
-> memory consumption. When you use streaming, it is usually close to aeson performance
+> memory consumption. When you use streaming, it may beat aeson performance
 > as lower memory requirements make up for lower performance.
 > For example counting number of array elements in 120MB
-> JSON file needed 1.3GB in aeson, only 2MB with json-stream.
+> JSON file needed 1.3GB in aeson, only 2MB with json-stream when the streamed values
+> were immediately discarded.
 
 Standard aeson parsing library reads the whole input, creates an object in memory representing
 the JSON structure which is then converted into proper values using FromJSON instances.
