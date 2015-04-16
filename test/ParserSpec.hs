@@ -140,11 +140,35 @@ specEdge = describe "Edge cases" $ do
         res = parseLazyByteString parser msg1 :: [Either Bool Int]
     res `shouldBe` [Right 1,Right 2,Left True,Right 34,Right 5,Right 6,Right 7]
 
+specControl :: Spec
+specControl = describe "Control parser" $ do
+  -- it "toList" $ do
+  -- it "fileterI" $ do
+  it "defaultValue" $ do
+    let test = "[{\"key1\":\"value1\", \"key2\":\"value2\"}, {\"key1\":\"test\"}, {}]"
+        parser = array $ (,) <$> defaultValue "default-key1" (objectWithKey "key1" value)
+                             <*> defaultValue "default-key2" (objectWithKey "key2" value)
+        res = parse parser test :: [(T.Text, T.Text)]
+    res `shouldBe` [("value1","value2"),("test","default-key2"),("default-key1","default-key2")]
+  it "catchFail" $ do
+    let test = "[{\"key1\":\"pre1\", \"key2\":\"value1\"}, {\"key1\":12}, {\"key1\":\"after1\", \"key2\": \"v2\"}]"
+        parser = array $ (,) <$> (objectWithKey "key1" value)
+                             <*> (objectWithKey "key2" value)
+        res = parse parser test :: [(T.Text, T.Text)]
+    ((last res) `seq` return ()) `shouldThrow` anyException
+    let parser2 = array $ (,) <$> (objectWithKey "key1" $ catchFail value)
+                              <*> (objectWithKey "key2" value)
+        -- Test it so that we get many calls to MoreData
+        pmsg = BL.fromChunks $ map BS.singleton (BS.unpack test)
+        res2 = parseLazyByteString parser2 pmsg :: [(T.Text, T.Text)]
+    res2 `shouldBe` [("pre1","value1"),("after1","v2")]
+
 spec :: Spec
 spec = do
   specBase
   specObjComb
   specEdge
+  specControl
 
 main :: IO ()
 main = do

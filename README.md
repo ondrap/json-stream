@@ -60,6 +60,21 @@ parseByteString :: Parser a -> BS.ByteString -> [a]
 [("key1",[1,2,3]),("key2",[5,6,7])]
 >>> parseByteString (array $ objectItems $ array value) (..json..) :: [(Text, Int)]
 [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
+
+-- catchFail can catch an error - it depends where you put it
+>>> parseByteString (array value) "[1,2,true,4,5]" :: [Int]
+[1,2*** Exception: when expecting a Int, encountered Boolean instead
+>>> parseByteString (catchFail $ array value) "[1,2,true,4,5]" :: [Int]
+[1,2]
+>>> parseByteString (array $ catchFail value) "[1,2,true,4,5]" :: [Int]
+[1,2,4,5]
+
+-- defaultValue produces a value if none is found
+-- JSON: [{"name":"John", "value": 12}, {"name":"name2"}]
+>>> let parser = array $ (,) <$> objectWithKey "name" value
+                             <*> defaultValue 0 (objectWithKey "value" value)
+>>> parseByteString parser (..json..) :: [(String,Int)]
+[("John",12),("name2",0)]
 ```
 
 See haddocks documentation for more details.
