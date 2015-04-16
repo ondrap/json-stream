@@ -92,8 +92,11 @@ isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']'
 peekChar :: TokenParser Char
 peekChar = TokenParser handle
   where
+    -- handle :: State -> (TokenResult' a, State)
     handle st@(State dta context)
-      | BS.null dta = (TokMoreData' (\newdta -> TokenParser $ \_ -> runTokParser peekChar (State newdta (BS.append context newdta))) context, st)
+      | BS.null dta = (TokMoreData' (\newdta -> TokenParser $ \_ -> handle (State newdta (BS.append context newdta)))
+                                     context
+                        , st)
       | otherwise   = (Intermediate' (BS.head dta), st)
 
 {-# INLINE pickChar #-}
