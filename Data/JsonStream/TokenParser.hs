@@ -258,7 +258,7 @@ parseNumber = do
 {-# INLINE mainParser #-}
 mainParser :: TokenParser ()
 mainParser = do
-  _ <- getWhile isSpace
+  _ <- getWhile' isSpace
   chr <- peekChar
   if | chr == '[' -> pickChar >> yield ArrayBegin
      | chr == ']' -> pickChar >> yield ArrayEnd
@@ -268,6 +268,7 @@ mainParser = do
      | isDigit chr || chr == '-' -> parseNumber
      | chr == '"' -> parseString
      | chr == 't' || chr == 'f' || chr == 'n'-> parseIdent
+     | isSpace chr -> mainParser
      | otherwise -> failTok
 
 {-# INLINE tokenParser #-}
