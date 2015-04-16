@@ -1,8 +1,11 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
+
 module Data.JsonStream.Parser (
     Parser
   , ParseOutput(..)
   , runParser
+  , runParser'
   , parseByteString
   , parseLazyByteString
 
@@ -113,7 +116,7 @@ arrayWithIndex idx valparse = array' itemFn
 
 -- | Match all items of an array, add index to output
 indexedArray :: Parser a -> Parser (Int, a)
-indexedArray valparse = array' (\key -> (key,) <$> valparse)
+indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
 
 object' :: (T.Text -> Parser a) -> Parser a
 object' valparse = Parser $ \tp ->
@@ -137,7 +140,7 @@ object' valparse = Parser $ \tp ->
 
 -- | Match all key-value pairs of an object, return them as a tuple
 objectItems :: Parser a -> Parser (T.Text, a)
-objectItems valparse = object' $ \key -> (key,) <$> valparse
+objectItems valparse = object' $ \(!key) -> (key,) <$> valparse
 
 -- | Match all key-value pairs of an object, return only values
 objectValues :: Parser a -> Parser a

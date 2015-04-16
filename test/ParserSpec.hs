@@ -6,6 +6,7 @@ import Test.Hspec
 import qualified Data.Aeson as AE
 import Data.Aeson (Value(..))
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 
@@ -15,6 +16,7 @@ import Data.JsonStream.TokenParser
 -- During the tests the single quotes are replaced with double quotes in the strings as
 -- otherwise it would be unreadable in haskell
 
+todquotes :: BS.ByteString -> BS.ByteString
 todquotes = BS.map squotes
   where
     squotes '\'' = '"'
@@ -23,12 +25,21 @@ todquotes = BS.map squotes
 
 parse parser text = parseByteString parser (todquotes text)
 
+testRemaining :: Parser a -> BS.ByteString -> BS.ByteString
+testRemaining parser startdata = loop (runParser' parser startdata)
+  where
+    loop (ParseNeedData _) = error "Not enough data."
+    loop (ParseDone rem1) = rem1
+    loop (ParseFailed err) = error err
+    loop (ParseYield _ np) = loop np
+
+
 tokenTest :: [BS.ByteString] -> [TokenResult]
 tokenTest chunks = reverse $ test [] (tail chunks) (tokenParser $ head chunks)
   where
     test acc [] o@(TokMoreData {}) = o:acc
     test acc (dta:rest) o@(TokMoreData ntok _) = test (o:acc) rest (ntok dta)
-    test acc lst o@(TokFailed {}) = o:acc
+    test acc _ o@(TokFailed {}) = o:acc
     test acc lst o@(PartialResult _ ntok _) = test (o:acc) lst ntok
 
 specBase :: Spec
@@ -84,19 +95,56 @@ specObjComb = describe "Object accesors" $ do
         msg = parse parser test :: [Int]
     msg `shouldBe` [1,2,5,6]
 
--- specEdge :: Spec
--- specEdge = describe "Edge cases"
---   it "Correct incremental parsing 1" $ do
---   it "Correct incremental parsing 2" $ do
---
---   it "Correctly returns unparsed data 1" $ do
---   it "Correctly returns unparsed data 2" $ do
---   it "Correctly returns unparsed data 3" $ do
+specEdge :: Spec
+specEdge = describe "Edge cases" $ do
+  it "Correct incremental parsing 1" $ do
+    let msg1 = "[ {\"test1\"  :[1,true,false,null,-3.591e+1,[12,13]], \"test2\":\"123\\r\\n\\\"\\u0041\"}]"
+        pmsg = BL.fromChunks $ map BS.singleton msg1
+        res = parseLazyByteString value pmsg :: [AE.Value]
+    show res `shouldBe` "[Array (fromList [Object fromList [(\"test2\",String \"123\\r\\n\\\"A\"),(\"test1\",Array (fromList [Number 1.0,Bool True,Bool False,Null,Number -35.91,Array (fromList [Number 12.0,Number 13.0])]))]])]"
 
+  it "Correctly skips data" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
+        res = parseByteString (array (pure "x") <|> arrayWithIndex 1 (pure "y")) msg1 :: [String]
+    res `shouldBe` ["x", "x", "x", "y"]
+
+  it "Correctly returns unparsed data 1" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] "
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " "
+  it "Correctly returns unparsed data 2" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] !x!"
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " !x!"
+  it "Correctly returns unparsed data 3" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] 25 "
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " 25 "
+  it "Correctly returns unparsed data 4" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] 25"
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " 25"
+  it "Correctly returns unparsed data 4" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] \""
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " \""
+  it "Correctly returns unparsed data 4" $ do
+    let msg1 = "[{\"123\":[1,2,[3,4]]},11] \"aa\""
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` " \"aa\""
+
+  it "Handles values in interleaving order" $ do
+    let msg1 = BL.fromChunks ["{\"err\":true,\"values\":[1,2,3",   "4,5,6,7]}"]
+        parser = (Right <$> objectWithKey "values" (array value))
+                  <|> (Left <$> objectWithKey "err" value)
+        res = parseLazyByteString parser msg1 :: [Either Bool Int]
+    res `shouldBe` [Right 1,Right 2,Left True,Right 34,Right 5,Right 6,Right 7]
+
+spec :: Spec
 spec = do
   specBase
   specObjComb
-  -- specEdge
+  specEdge
 
 main :: IO ()
 main = do

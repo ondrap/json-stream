@@ -14,9 +14,10 @@ check for JSON syntax and the behaviour on incorrect JSON input is undefined. In
   Json-stream uses lenientDecoding that replaces incorrect unicode characters instead of throwing exception.
 
 - Both the tokenizer and the actual parser are very lightweight and simple. This parser will
-  not complain in many cases on incorrect input. **The result on incorrect input is undefined.**
-
-
+  not complain in many cases on badly formed input. **The result on badly formed input is undefined.**
+  However, the parser will complain if the parsed structure does not conform to the specified parser.
+  E.g. if the parser expects an array and a number is found, it is reported as an error.
+  Not finding a particular key in an object (`objectWithKey`) will not be reported as an error.
 
 ```haskell
 -- The parseByteString function always returns a list of 'things'.
