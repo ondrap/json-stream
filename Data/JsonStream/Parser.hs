@@ -51,7 +51,14 @@ instance Functor Parser where
   fmap f (Parser p) = Parser $ \d -> fmap f (p d)
 
 instance Applicative Parser where
-  pure x = Parser $ \tok -> Yield x (callParse ignoreVal tok)
+  pure x = Parser $ \tok -> process (callParse ignoreVal tok)
+    where
+      process (Failed err) = Failed err
+      process (Done tok) = Yield x (Done tok)
+      process (UnexpectedEnd el tok) = UnexpectedEnd el tok
+      process (MoreData (np, ntok)) = MoreData (Parser (process . callParse np), ntok)
+      process _ = Failed "Internal error in pure, ignoreVal doesn't yield"
+
   -- | Run both parsers in parallel using a shared token parser, combine results
   (<*>) m1 m2 = Parser $ \tok -> process ([], []) (callParse m1 tok) (callParse m2 tok)
     where
@@ -259,7 +266,7 @@ catchFail valparse = Parser $ \tok -> process (callParse valparse tok) (callPars
     process (MoreData (np1, ntok1)) (MoreData (np2, _)) =
         MoreData (Parser (\tok -> process (callParse np1 tok) (callParse np2 tok)), ntok1)
     process p1@(Failed _) (MoreData (np2, ntok2)) =
-        MoreData (Parser (\tok -> process p1 (callParse np2 tok)), ntok2)
+        MoreData (Parser (process p1 . callParse np2), ntok2)
     process _ _ = Failed "Unexpected error in parallel processing catchFail."
 
 data ParseOutput a = ParseYield a (ParseOutput a)

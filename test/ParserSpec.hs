@@ -105,8 +105,8 @@ specEdge = describe "Edge cases" $ do
 
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
-        res = parseByteString (array (pure "x") <|> arrayWithIndex 1 (pure "y")) msg1 :: [String]
-    res `shouldBe` ["x", "x", "x", "y"]
+        res = parseByteString (arrayWithIndex 0 (objectValues (array $ pure "x")) <|> arrayWithIndex 1 (pure "y") <|> array (pure "z")) msg1 :: [String]
+    res `shouldBe` ["x", "x", "x", "y", "z", "z"]
 
   it "Correctly returns unparsed data 1" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11] "
@@ -163,12 +163,25 @@ specControl = describe "Control parser" $ do
         res2 = parseLazyByteString parser2 pmsg :: [(T.Text, T.Text)]
     res2 `shouldBe` [("pre1","value1"),("after1","v2")]
 
+-- Tests of things that were found to be buggy
+errTests :: Spec
+errTests = describe "Tests of previous errors" $
+  it "array (pure True) should return only n*True, not (n+1)" $ do
+    let test1 = "[]"
+        res1 = parse (array (pure True)) test1 :: [Bool]
+    length res1 `shouldBe` 0
+    let test2 = "[{},2,3,[]]"
+        res2 = parse (array (pure True)) test2 :: [Bool]
+    length res2 `shouldBe` 4
+
+
 spec :: Spec
 spec = do
   specBase
   specObjComb
   specEdge
   specControl
+  errTests
 
 main :: IO ()
 main = do

@@ -13,9 +13,7 @@ import qualified Data.Aeson               as AE
 import qualified Data.ByteString.Char8    as BS
 import           Data.Char                (isDigit, isDigit, isLower, isSpace)
 import qualified Data.Text                as T
-import           Data.Text.Encoding       (decodeUtf8With, encodeUtf8)
-import           Data.Text.Encoding.Error (lenientDecode)
-
+import           Data.Text.Encoding       (decodeUtf8', encodeUtf8)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
                | ObjectKey T.Text | JValue AE.Value
@@ -83,9 +81,11 @@ instance Functor TokenParser where
 failTok :: TokenParser a
 failTok = TokenParser $ \s -> (TokFailed' (stContext s), s)
 
+{-# INLINE isBreakChar #-}
 isBreakChar :: Char -> Bool
 isBreakChar c = isSpace c || (c == '{') || (c == '[') || (c == '}') || (c == ']') || (c == ',')
 
+{-# INLINE peekChar #-}
 peekChar :: TokenParser Char
 peekChar = TokenParser handle
   where
@@ -93,6 +93,7 @@ peekChar = TokenParser handle
       | BS.null dta = (TokMoreData' (\newdta -> TokenParser $ \_ -> runTokParser peekChar (State newdta (BS.append context newdta))) context, st)
       | otherwise   = (Intermediate' (BS.head dta), st)
 
+{-# INLINE pickChar #-}
 pickChar :: TokenParser Char
 pickChar = do
     chr <- peekChar
@@ -101,6 +102,7 @@ pickChar = do
   where
     dropchar = TokenParser $ \s -> (Intermediate' (), s{stData=BS.tail (stData s)})
 
+{-# INLINE yield #-}
 yield :: Element -> TokenParser ()
 yield el = TokenParser $ \state@(State dta ctx) -> (PartialResult' el (contparse dta) ctx, state)
   where
@@ -108,6 +110,7 @@ yield el = TokenParser $ \state@(State dta ctx) -> (PartialResult' el (contparse
     contparse dta = TokenParser $ const (Intermediate' (), State dta dta )
 
 -- | Return SOME input satisfying predicate or none, if the next element does not satisfy
+{-# INLINE getWhile' #-}
 getWhile' :: (Char -> Bool) -> TokenParser BS.ByteString
 getWhile' predicate = do
   char <- peekChar
@@ -119,6 +122,7 @@ getWhile' predicate = do
         in (Intermediate' st, State rest ctx)
 
 -- | Read ALL input satisfying predicate
+{-# INLINE getWhile #-}
 getWhile :: (Char -> Bool) -> TokenParser BS.ByteString
 getWhile predicate = loop []
   where
@@ -158,6 +162,7 @@ parseUnicode = do
 
 --
 -- Choose if this is object key based on next character
+{-# INLINE chooseKeyOrValue #-}
 chooseKeyOrValue :: T.Text -> TokenParser ()
 chooseKeyOrValue text = do
   _ <- getWhile isSpace
@@ -176,7 +181,9 @@ parseString = do
       case chr of
         '"' -> do
             _ <- pickChar
-            chooseKeyOrValue $ decodeUtf8With lenientDecode $ BS.concat $ reverse acc
+            case decodeUtf8' (BS.concat $ reverse acc) of
+              Left _ -> failTok
+              Right val -> chooseKeyOrValue val
         '\\' -> do
             _ <- pickChar
             specchr <- pickChar
@@ -197,6 +204,7 @@ parseString = do
     parseSpecChar 'u' = parseUnicode
     parseSpecChar c = return c
 
+{-# INLINE parseNumber #-}
 parseNumber :: TokenParser ()
 parseNumber = do
     sign <- parseSign
@@ -236,6 +244,7 @@ parseNumber = do
       unless (isDigit chr) failTok
       getWhile isDigit
 
+{-# INLINE mainParser #-}
 mainParser :: TokenParser ()
 mainParser = do
   _ <- getWhile isSpace
@@ -250,6 +259,7 @@ mainParser = do
      | chr == 't' || chr == 'f' || chr == 'n'-> parseIdent
      | otherwise -> failTok
 
+{-# INLINE tokenParser #-}
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = handle $ runTokParser mainParser (State dta dta)
   where

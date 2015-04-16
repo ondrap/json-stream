@@ -1,5 +1,2 @@
 - Tests
-  - [ ] Combinators
-  - [ ] <|>, <*>
-  - [ ] Correctly returns unparsed rest of input
   - [ ] Measure performance, compare with Aeson

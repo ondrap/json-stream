@@ -1,5 +1,10 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
+Current state: the library should be normally usable, the parsing is
+about twice as slow than aeson, however  using the applicative
+parsing (instead of parsing the whole object) gets you significantly
+lower memory usage.  
+
 Standard aeson parsing library reads the whole input, creates an object in memory representing
 the JSON structure which is then converted into proper values using FromJSON instances.
 This library is compatibile with aeson - you can immediately use FromJSON instances almost without

@@ -1,3 +1,5 @@
 dist/
 cabal.sandbox.config
 .cabal-sandbox/
+*.o
+*.hi
