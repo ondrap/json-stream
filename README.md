@@ -1,8 +1,11 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
-> This is still work in progress, the names of the combinators will probably change,
-> so that the use is more intuitive.
->
+Most haskellers use the excellent [aeson](https://hackage.haskell.org/package/aeson) library
+to decode and encode JSON structures. Unfortunately, although very fast, this parser
+must read the whole structure into memory. At a first sight it seemed that creating
+an incremental JSON parser would be very hard thing to do; it turned out to be
+remarkable easy. Just wondering, why nobody came with this earlier...
+
 > Parsing is
 > from 40% faster to ~50% slower than aeson, depending on the parser
 > grammar and the test. Generally, parsing small pieces is faster with aeson, parsing
@@ -13,22 +16,23 @@
 >
 > Counting number of array elements in 120MB
 > JSON file (1M elements) needed 1.7GB in aeson, 1.5GB with json-stream in the aeson mode
-> (the grammar being just `value`). It needed 700MB when json-stream grammar
-> was used and only 2MB in streaming mode when parsed data was discarded
-> after processing.
+> (the grammar being just `value`; in reality json-stream needed more memory, the GC just did the job
+> differently). 700MB was needed when json-stream grammar was used
+> and only 2MB in streaming mode when parsed data was discarded after processing.
 
-Standard aeson parsing library reads the whole input, creates an object in memory representing
+Standard aeson library reads the whole input, creates an object in memory representing
 the JSON structure which is then converted into proper values using FromJSON instances.
 This library is compatibile with aeson - you can immediately use FromJSON instances almost without
 any change in code and enjoy incremental parsing. The real strength is in the applicative interface
 which allows to parse only those parts of JSON that are of interest while skipping what is not needed.
 
 The parsing process uses the least amount of memory possible and is completely lazy. It does not perfectly
-check for JSON syntax and the behaviour on incorrect JSON input is undefined (it cheats quite a lot).
-**The result on badly formed input is undefined.**
+check for JSON syntax and the behaviour on incorrect JSON input is undefined (it cheats quite a lot;
+but this is needed for constant-space parsing). **The result on badly formed input is undefined,
+the parser is not guaranteed to fail on bad input.**
 
 - The parser generally does not fail. If the data does not match, the parser silently ignores it.
-  The failures are generally syntax errors of JSON decoding.
+  The failures should be only syntax errors in JSON.
 - The ',' character in the lexer is treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
