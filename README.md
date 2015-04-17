@@ -6,12 +6,13 @@
 > Parsing is
 > from 40% faster to ~50% slower than aeson, depending on the parser
 > grammar and the test. Generally, parsing small pieces is faster with aeson, parsing
-> large structures works better with json-stream because of lower memory
+> large structures consisting of smaller objects works better with
+> json-stream because of lower memory
 > consumption and less stress on the GC. Creating parsers for complex
 > JSON structures can be much easier using json-stream.
 >
 > Counting number of array elements in 120MB
-> JSON file needed 1.7GB in aeson, 1.5GB with json-stream in the aeson mode
+> JSON file (1M elements) needed 1.7GB in aeson, 1.5GB with json-stream in the aeson mode
 > (the grammar being just `value`). It needed 700MB when json-stream grammar
 > was used and only 2MB in streaming mode when parsed data was discarded
 > after processing.
@@ -55,33 +56,28 @@ the parser and close the HTTP connection.
 ```haskell
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
-resultParser =   (const [] <$> is not ("errors" .: value))
+resultParser = (const [] <$> filterI not ("errors" .: value))
               <|> toList ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)
 bulkItemError = objectValues $
     (,) <$> "_id" .: value
-        <*> defaultValue "Unknown error" ("error" .: value)
-        <*  is statusError ("status" .: value)
+        <*> "error" .:? value .!= "Unknown error."
+        <*  filterI statusError ("status" .: value)
   where
     statusError s = s < 200 || s > (299 :: Int)
 
--- Some definitions to make the definition nicer - might make it to next version
-arrayOf = array
-(.:) = objectWithKey
-is = filterI
 ```
+## Constant space parsing
+
+If the matching grammar follows certain rules and the input chunks have limited size,
+the parsing should run in constant space. If you have a large JSON structure but need
+only small pieces, the parsing can be very fast - when the data does not match what
+is expected, it is parsed only by the lexical parser and ignored.
 
 ## Examples
 
 ```haskell
--- Next version will deprecate 'array' in favour of 'arrayOf'
-arrayOf :: Parser a -> Parser a
-arrayOf = JS.array
--- Next version might define this operator, but there is a clash with aeson .:
-(.:) :: T.Text -> Parser a -> Parser a
-(.:) = objectWithKey
-
 -- The parseByteString function always returns a list of 'things'.
 -- Other functions are available.
 >>> :t parseByteString
@@ -123,12 +119,14 @@ parseByteString :: Parser a -> ByteString -> [a]
 >>> parseByteString (arrayOf $ objectItems $ arrayOf value) (..json..) :: [(Text, Int)]
 [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
 
--- defaultValue produces a value if none is found
+-- .:? produces a maybe value; Nothing if match is not found or is null.
+-- .!= converts Maybe back with a default
 -- JSON: [{"name":"John", "value": 12}, {"name":"name2"}]
->>> let parser = arrayOf $ (,) <$> "name" .: value
-                             <*> defaultValue 0 ("value" .: value)
+>>> let parser = arrayOf $ (,) <$> "name"  .: string
+                               <*> "value" .: integer .!= 0
 >>> parseByteString parser (..json..) :: [(String,Int)]
 [("John",12),("name2",0)]
+
 ```
 
 See haddocks documentation for more details.

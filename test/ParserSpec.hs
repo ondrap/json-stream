@@ -193,6 +193,13 @@ errTests = describe "Tests of previous errors" $ do
         res1 = parse (objectWithKey "test1" value) test1 :: [Int]
     res1 `shouldBe` [1]
 
+  it "binds correctly convenience operators" $ do
+    let test1 = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}, {\"name\": \"test4\", \"value\": true}]"
+        parser = arrayOf $ (,) <$> "name" .: string
+                               <*> "value" .:? integer .!= (-1)
+        res = parse parser test1 :: [(T.Text, Int)]
+    res `shouldBe` [("test1",1),("test2",-1),("test3",-1),("test4",-1)]
+
 aeCompare :: Spec
 aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
   let values = [

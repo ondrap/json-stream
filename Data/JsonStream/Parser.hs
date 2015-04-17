@@ -22,6 +22,9 @@ module Data.JsonStream.Parser (
     -- * Constant space decoding
     -- $constant
 
+    -- * Aeson compatibility
+    -- $aeson
+
     -- * The @Parser@ type
     Parser
   , ParseOutput(..)
@@ -38,6 +41,10 @@ module Data.JsonStream.Parser (
   , integer
   , real
   , bool
+    -- * Convenience aeson-like operators
+  , (.:)
+  , (.:?)
+  , (.!=)
     -- * Structure parsers
   , objectWithKey
   , objectItems
@@ -62,6 +69,7 @@ import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
+import Data.Maybe (fromMaybe)
 
 import           Data.JsonStream.TokenParser
 
@@ -193,14 +201,20 @@ object' once valparse = Parser $ \tp ->
 
 
 -- | Match all key-value pairs of an object, return them as a tuple.
+-- If the source object defines same key multiple times, all values
+-- are matched.
 objectItems :: Parser a -> Parser (T.Text, a)
 objectItems valparse = object' False $ \(!key) -> (key,) <$> valparse
 
 -- | Match all key-value pairs of an object, return only values.
+-- If the source object defines same key multiple times, all values
+-- are matched.
 objectValues :: Parser a -> Parser a
 objectValues valparse = object' False (const valparse)
 
 -- | Match only specific key of an object.
+-- This function will return only the first matched value in an object even
+-- if the source JSON defines the key multiple times (in violation of the specification).
 objectWithKey :: T.Text -> Parser a -> Parser a
 objectWithKey name valparse = object' True itemFn
   where
@@ -366,6 +380,25 @@ defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valpars
     loop found (MoreData (Parser np, ntok)) = MoreData (Parser (loop found . np), ntok)
     loop _ (Yield v np) = Yield v (loop True np)
 
+--- Convenience operators
+
+-- | Synonym to 'objectWithKey'.
+(.:) :: T.Text -> Parser a -> Parser a
+(.:) = objectWithKey
+
+-- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
+--
+-- > key .:? val = defaultValue Nothing (key .: nullable val)
+(.:?) :: T.Text -> Parser a -> Parser (Maybe a)
+key .:? val = defaultValue Nothing (key .: nullable val)
+
+-- | Converts 'Maybe' parser into normal one by providing default value instead of 'Nothing'.
+--
+-- > nullval .!= defval = fromMaybe defval <$> nullval
+(.!=) :: Parser (Maybe a) -> a -> Parser a
+nullval .!= defval = fromMaybe defval <$> nullval
+---
+
 -- | Result of parsing. Contains continuations to continue parsing.
 data ParseOutput a = ParseYield a (ParseOutput a) -- ^ Returns a value from a parser.
                     | ParseNeedData (BS.ByteString -> ParseOutput a) -- ^ Parser needs more data to continue parsing.
@@ -426,8 +459,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- parallel parsing and yield some combination of the parsed values.
 --
 -- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
--- > >>> let parser = array $ (,) <$> objectWithKey "name" value
--- >                              <*> objectWithKey "age" value
+-- > >>> let parser = array $ (,) <$> "name" .: value
+-- >                              <*> "age" .: value
 -- > >>> parseByteString  parser text :: [(Text,Int)]
 -- > [("John",20),("Frank",30)]
 --
@@ -445,7 +478,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
 -- 'parseJSON' method. The AST can consume a lot of memory before it is rejected
--- in 'parseJSON'. To achieve constant space the parsers 'string', 'number' and 'bool'
+-- in 'parseJSON'. To achieve constant space the parsers 'string', 'number', 'integer',
+-- 'real' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
 -- type.
 --
@@ -455,5 +489,25 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- The '<*>' operator runs both parsers in parallel and when they are both done, it
 -- produces combinations of the received values. It is constant-space as long as the
 -- child parsers produce constant number of values. This can be achieved by using
--- 'arrayWithIndex' and 'objectWithKey' functions that are guaranteed to return only
--- one value.
+-- 'arrayWithIndex' and 'objectWithKey' functions combined with constant space
+-- parsers or limiting the number of returned elements with 'takeI'.
+--
+-- If the source object contains an object with multiple keys with a same name,
+-- json-stream considers and matches the key multiple times. The only exception
+-- is 'objectWithKey' ('.:' and '.:?') that switch to ignore parser as soon as
+-- a value is returned.
+
+-- $aeson
+-- The parser uses internally "Data.Aeson" types, so that the FromJSON instances are
+-- directly usable with the 'value' parser. It may be more convenient to parse the
+-- outer structure with json-stream and the inner objects with aeson as long as constant-space
+-- decoding is not required.
+--
+-- Json-stream defines the object-access operators '.:', '.:?' and '.!=',
+-- but in a slightly different albeit more natural way.
+--
+-- > -- JSON: [{"name": "test1", "value": 1}, {"name": "test2", "value": null}, {"name": "test3"}]
+-- > >>> let parser = arrayOf $ (,) <$> "name" .: string
+-- > >>>                            <*> "value" .:? integer .!= (-1)
+-- > >>> parseByteString parser (..JSON..)
+-- > [("test1",1),("test2",-1),("test3",-1)]
