@@ -33,6 +33,7 @@ module Data.JsonStream.Parser (
   , objectItems
   , objectValues
   , array
+  , arrayOf
   , arrayWithIndex
   , indexedArray
     -- * Parsing modifiers
@@ -135,8 +136,13 @@ array' valparse = Parser $ \tp ->
     arrcontent _ (UnexpectedEnd el _) = Failed ("Array - UnexpectedEnd: " ++ show el)
 
 -- | Match all items of an array.
+arrayOf :: Parser a -> Parser a
+arrayOf valparse = array' (const valparse)
+
+-- | Deprecated, use arrayOf
+{-# DEPRECATED array "Use arrayOf instead" #-}
 array :: Parser a -> Parser a
-array valparse = array' (const valparse)
+array = arrayOf
 
 -- | Match n'th item of an array.
 arrayWithIndex :: Int -> Parser a -> Parser a

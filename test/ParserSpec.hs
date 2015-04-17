@@ -46,22 +46,22 @@ specBase :: Spec
 specBase = describe "Basic parsing" $ do
   it "Parses null values" $ do
     let test = "[null,3]"
-        res = parse (array value) test :: [Maybe Int]
+        res = parse (arrayOf value) test :: [Maybe Int]
     res `shouldBe` [Nothing, Just 3 ]
 
   it "Parses bool values" $ do
     let test = "[true,false]"
-        res = parse (array value) test :: [Bool]
+        res = parse (arrayOf value) test :: [Bool]
     res `shouldBe` [True, False]
 
   it "Parses string values with special chracters" $ do
     let test = "['" `BS.append` (encodeUtf8 "žluť")  `BS.append` "', '\\n\\b\\r\\'', '\\u0041\\u0078\\u0161']"
-        res = parse (array value) test :: [T.Text]
+        res = parse (arrayOf value) test :: [T.Text]
     res `shouldBe` ["\382lu\357","\n\b\r\"","Ax\353"]
 
   it "Parses fractional values with exponent" $ do
     let test = "[1, 2.5, -3.6, 6e1, -3.2e-2]"
-        res = parse (array value) test :: [Double]
+        res = parse (arrayOf value) test :: [Double]
     show res `shouldBe` "[1.0,2.5,-3.6,60.0,-3.2e-2]"
 
   it "Parses objects 1" $ do
@@ -73,25 +73,25 @@ specObjComb :: Spec
 specObjComb = describe "Object accesors" $ do
   it "objectWithKey works" $ do
     let test = "[{'name': 'John', 'age': 20}, {'age': 30, 'name': 'Frank' } ]"
-        msg = parse (array $ (,) <$> objectWithKey "name" value <*> objectWithKey "age" value) test :: [(T.Text,Int)]
+        msg = parse (arrayOf $ (,) <$> objectWithKey "name" value <*> objectWithKey "age" value) test :: [(T.Text,Int)]
     msg `shouldBe` [("John",20),("Frank",30)]
 
   it "yield test 1" $ do
     let test = "[{'key1': [1,2,3], 'key2': [5,6,7]}]"
-        msg1 = parse (array $ objectItems value) test :: [(T.Text, [Int])]
-        msg2 = parse (array $ objectItems $ array value) test :: [(T.Text, Int)]
+        msg1 = parse (arrayOf $ objectItems value) test :: [(T.Text, [Int])]
+        msg2 = parse (arrayOf $ objectItems $ arrayOf value) test :: [(T.Text, Int)]
     msg1 `shouldBe` [("key1",[1,2,3]),("key2",[5,6,7])]
     msg2 `shouldBe` [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
 
   it "<*> test 1 reverse keys" $ do
     let test = "[{'key1': [1,2], 'key2': [5,6], 'key3': [8,9]}]"
-        parser = array $ (,) <$> objectWithKey "key2" (array value) <*> objectWithKey "key1" (array value)
+        parser = arrayOf $ (,) <$> objectWithKey "key2" (arrayOf value) <*> objectWithKey "key1" (arrayOf value)
         msg = parse parser test :: [(Int, Int)]
     msg `shouldBe` [(6,2),(6,1),(5,2),(5,1)]
 
   it "<|> test 1" $ do
     let test = "[{'key1': [1,2], 'key2': [5,6], 'key3': [8,9]}]"
-        parser = array $ objectWithKey "key1" (array value) <|> objectWithKey "key2" (array value)
+        parser = arrayOf $ objectWithKey "key1" (arrayOf value) <|> objectWithKey "key2" (arrayOf value)
         msg = parse parser test :: [Int]
     msg `shouldBe` [1,2,5,6]
 
@@ -105,7 +105,7 @@ specEdge = describe "Edge cases" $ do
 
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
-        res = parseByteString (arrayWithIndex 0 (objectValues (array $ pure "x")) <|> arrayWithIndex 1 (pure "y") <|> array (pure "z")) msg1 :: [String]
+        res = parseByteString (arrayWithIndex 0 (objectValues (arrayOf $ pure "x")) <|> arrayWithIndex 1 (pure "y") <|> arrayOf (pure "z")) msg1 :: [String]
     res `shouldBe` ["x", "x", "x", "y", "z", "z"]
 
   it "Correctly returns unparsed data 1" $ do
@@ -135,7 +135,7 @@ specEdge = describe "Edge cases" $ do
 
   it "Handles values in interleaving order" $ do
     let msg1 = BL.fromChunks ["{\"err\":true,\"values\":[1,2,3",   "4,5,6,7]}"]
-        parser = (Right <$> objectWithKey "values" (array value))
+        parser = (Right <$> objectWithKey "values" (arrayOf value))
                   <|> (Left <$> objectWithKey "err" value)
         res = parseLazyByteString parser msg1 :: [Either Bool Int]
     res `shouldBe` [Right 1,Right 2,Left True,Right 34,Right 5,Right 6,Right 7]
@@ -146,17 +146,17 @@ specControl = describe "Control parser" $ do
   -- it "fileterI" $ do
   it "defaultValue" $ do
     let test = "[{\"key1\":\"value1\", \"key2\":\"value2\"}, {\"key1\":\"test\"}, {}]"
-        parser = array $ (,) <$> defaultValue "default-key1" (objectWithKey "key1" value)
+        parser = arrayOf $ (,) <$> defaultValue "default-key1" (objectWithKey "key1" value)
                              <*> defaultValue "default-key2" (objectWithKey "key2" value)
         res = parse parser test :: [(T.Text, T.Text)]
     res `shouldBe` [("value1","value2"),("test","default-key2"),("default-key1","default-key2")]
   it "catchFail" $ do
     let test = "[{\"key1\":\"pre1\", \"key2\":\"value1\"}, {\"key1\":12}, {\"key1\":\"after1\", \"key2\": \"v2\"}]"
-        parser = array $ (,) <$> (objectWithKey "key1" value)
+        parser = arrayOf $ (,) <$> (objectWithKey "key1" value)
                              <*> (objectWithKey "key2" value)
         res = parse parser test :: [(T.Text, T.Text)]
     ((last res) `seq` return ()) `shouldThrow` anyException
-    let parser2 = array $ (,) <$> (objectWithKey "key1" $ catchFail value)
+    let parser2 = arrayOf $ (,) <$> (objectWithKey "key1" $ catchFail value)
                               <*> (objectWithKey "key2" value)
         -- Test it so that we get many calls to MoreData
         pmsg = BL.fromChunks $ map BS.singleton (BS.unpack test)
@@ -166,12 +166,12 @@ specControl = describe "Control parser" $ do
 -- Tests of things that were found to be buggy
 errTests :: Spec
 errTests = describe "Tests of previous errors" $
-  it "array (pure True) should return only n*True, not (n+1)" $ do
+  it "arrayOf (pure True) should return only n*True, not (n+1)" $ do
     let test1 = "[]"
-        res1 = parse (array (pure True)) test1 :: [Bool]
+        res1 = parse (arrayOf (pure True)) test1 :: [Bool]
     length res1 `shouldBe` 0
     let test2 = "[{},2,3,[]]"
-        res2 = parse (array (pure True)) test2 :: [Bool]
+        res2 = parse (arrayOf (pure True)) test2 :: [Bool]
     length res2 `shouldBe` 4
 
 
