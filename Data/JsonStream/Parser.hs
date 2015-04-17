@@ -41,6 +41,7 @@ module Data.JsonStream.Parser (
   , integer
   , real
   , bool
+  , jNull
     -- * Convenience aeson-like operators
   , (.:)
   , (.:?)
@@ -281,11 +282,18 @@ real = jvalue cvt
     cvt (AE.Number num) = Just $ toRealFloat num
     cvt _ = Nothing
 
--- | Parse bool, skip if the type is not bool
+-- | Parse bool, skip if the type is not bool.
 bool :: Parser Bool
 bool = jvalue cvt
   where
     cvt (AE.Bool b) = Just b
+    cvt _ = Nothing
+
+-- | Match a null value.
+jNull :: Parser ()
+jNull = jvalue cvt
+  where
+    cvt (AE.Null) = Just ()
     cvt _ = Nothing
 
 -- | Parses a field with a possible null value. Use 'defaultValue' for missing values.

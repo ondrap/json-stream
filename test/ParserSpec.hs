@@ -177,6 +177,10 @@ specControl = describe "Control parser" $ do
     let test = "[1,2,null,\"test\",null,3,[],{}]"
         res = parse (arrayOf $ nullable integer) test :: [Maybe Int]
     res `shouldBe` [Just 1, Just 2, Nothing, Nothing, Just 3]
+  it "matches null values" $ do
+    let test = "[1,2,null,\"test\",null,3,[],{}]"
+        res = parse (arrayOf jNull) test :: [()]
+    length res `shouldBe` 2
 
 -- Tests of things that were found to be buggy
 errTests :: Spec

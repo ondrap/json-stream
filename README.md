@@ -65,8 +65,8 @@ resultParser = (const [] <$> filterI not ("errors" .: value))
 
 bulkItemError :: Parser (Text, Text)
 bulkItemError = objectValues $
-    (,) <$> "_id" .: value
-        <*> "error" .:? value .!= "Unknown error."
+    (,) <$> "_id"   .: value
+        <*> "error" .: value
         <*  filterI statusError ("status" .: value)
   where
     statusError s = s < 200 || s > (299 :: Int)
@@ -127,7 +127,7 @@ parseByteString :: Parser a -> ByteString -> [a]
 -- .!= converts Maybe back with a default
 -- JSON: [{"name":"John", "value": 12}, {"name":"name2"}]
 >>> let parser = arrayOf $ (,) <$> "name"  .: string
-                               <*> "value" .: integer .!= 0
+                               <*> "value" .:? integer .!= 0
 >>> parseByteString parser (..json..) :: [(String,Int)]
 [("John",12),("name2",0)]
 
