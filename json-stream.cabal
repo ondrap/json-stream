@@ -49,3 +49,4 @@ test-suite spec
                        , vector
                        , unordered-containers
                        , hspec
+                       , scientific

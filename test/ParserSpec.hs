@@ -144,6 +144,12 @@ specControl = describe "Control parser" $ do
         res = parse parser test :: [(T.Text, T.Text)]
     res `shouldBe` [("value1","value2"),("test","default-key2"),("default-key1","default-key2")]
 
+  it "takeI limits number of values" $ do
+    let test = "[[1,2,3], [4,5,6]]"
+        parser = arrayOf $ takeI 2 $ arrayOf integer
+        res = parse parser test :: [Int]
+    res `shouldBe` [1,2,4,5]
+
   it "ignores non-match for array" $ do
     let test = "[1,2,[3,4,5]]"
         parser = arrayOf (arrayOf value)

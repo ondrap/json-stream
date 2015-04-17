@@ -42,15 +42,15 @@ module Data.JsonStream.Parser (
   , objectWithKey
   , objectItems
   , objectValues
-  , array
   , arrayOf
   , arrayWithIndex
   , indexedArray
   , nullable
     -- * Parsing modifiers
-  , filterI
-  , toList
   , defaultValue
+  , filterI
+  , takeI
+  , toList
 ) where
 
 import           Control.Applicative
@@ -151,11 +151,6 @@ array' valparse = Parser $ \tp ->
 arrayOf :: Parser a -> Parser a
 arrayOf valparse = array' (const valparse)
 
--- | Deprecated, use arrayOf
-{-# DEPRECATED array "Use arrayOf instead" #-}
-array :: Parser a -> Parser a
-array = arrayOf
-
 -- | Match n'th item of an array.
 arrayWithIndex :: Int -> Parser a -> Parser a
 arrayWithIndex idx valparse = array' itemFn
@@ -221,7 +216,7 @@ aeValue = Parser value'
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) =
-        AE.Array . Vec.fromList <$> callParse (toList (array value)) tok
+        AE.Array . Vec.fromList <$> callParse (toList (arrayOf value)) tok
     value' tok@(PartialResult ObjectBegin _ _) =
         AE.Object . HMap.fromList <$> callParse (toList (objectItems value)) tok
     value' (PartialResult el ntok _)
@@ -243,7 +238,7 @@ jvalue convert = Parser value'
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = callParse ignoreVal tp
 
--- | Parse string value, skip if is not a string value.
+-- | Parse string value, skip parsing otherwise.
 string :: Parser T.Text
 string = jvalue cvt
   where
@@ -257,7 +252,7 @@ number = jvalue cvt
     cvt (AE.Number num) = Just num
     cvt _ = Nothing
 
--- | Parse to integer type
+-- | Parse to integer type.
 integer :: (Integral i, Bounded i) => Parser i
 integer = jvalue cvt
   where
@@ -265,7 +260,7 @@ integer = jvalue cvt
       | isInteger num = toBoundedInteger num
     cvt _ = Nothing
 
--- | Parse to float/double
+-- | Parse to float/double.
 real :: RealFloat a => Parser a
 real = jvalue cvt
   where
@@ -279,7 +274,7 @@ bool = jvalue cvt
     cvt (AE.Bool b) = Just b
     cvt _ = Nothing
 
--- | Parsing of field with possible null value
+-- | Parses a field with a possible null value. Use 'defaultValue' for missing values.
 nullable :: Parser a -> Parser (Maybe a)
 nullable valparse = Parser value'
   where
@@ -302,6 +297,16 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
         AE.Error _ -> loop np
         AE.Success res -> Yield res (loop np)
 
+-- | Take maximum n matching items.
+takeI :: Int -> Parser a -> Parser a
+takeI num valparse = Parser $ \tok -> loop num (callParse valparse tok)
+  where
+    loop _ (Done ntp) = Done ntp
+    loop _ (Failed err) = Failed err
+    loop _ (UnexpectedEnd el b) = UnexpectedEnd el b
+    loop n (MoreData (Parser np, ntok)) = MoreData (Parser (loop n . np), ntok)
+    loop 0 (Yield _ np) = loop 0 np
+    loop n (Yield v np) = Yield v (loop (n-1) np)
 
 -- | Skip value; cheat to avoid parsing and make it faster
 ignoreVal :: Parser a
@@ -439,8 +444,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- '<*>'.
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
--- parseJSON method. The parsing process can consume lot of data before failing
--- in parseJSON. To achieve constant space the parsers 'string', 'number' and 'bool'
+-- 'parseJSON' method. The AST can consume a lot of memory before it is rejected
+-- in 'parseJSON'. To achieve constant space the parsers 'string', 'number' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
 -- type.
 --

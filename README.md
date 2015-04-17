@@ -85,7 +85,7 @@ arrayOf = JS.array
 -- The parseByteString function always returns a list of 'things'.
 -- Other functions are available.
 >>> :t parseByteString
-parseByteString :: Parser a -> BS.ByteString -> [a]
+parseByteString :: Parser a -> ByteString -> [a]
 
 -- 'value' stands for FromJSON instance that will be yielded;
 -- most normal types work by default
