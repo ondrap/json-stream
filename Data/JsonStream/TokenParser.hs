@@ -143,7 +143,7 @@ getWhile predicate = do
     loop acc = do
       (dta, complete) <- getWhile' predicate
       if complete
-        then return $ BS.concat $ reverse (dta:acc)
+        then return $! BS.concat $ reverse (dta:acc)
         else loop (dta:acc)
 
 -- | Parse unquoted identifier - true/false/null
@@ -162,7 +162,7 @@ parseIdent = do
 parseUnicode :: TokenParser Char
 parseUnicode = do
     lst <- replicateM 4 pickChar
-    return $ toEnum $ foldl1 (\a b -> 16 * a + b) $ map hexCharToInt lst
+    return $! toEnum $ foldl1 (\a b -> 16 * a + b) $ map hexCharToInt lst
   where
     hexCharToInt :: Char -> Int
     hexCharToInt c

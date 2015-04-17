@@ -216,9 +216,9 @@ aeValue = Parser value'
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
     value' tok@(PartialResult ArrayBegin _ _) =
-        AE.Array . Vec.fromList <$> callParse (toList (arrayOf value)) tok
+        AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
     value' tok@(PartialResult ObjectBegin _ _) =
-        AE.Object . HMap.fromList <$> callParse (toList (objectItems value)) tok
+        AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
     value' (PartialResult el ntok _)
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = Failed ("aeValue - unexpected token: " ++ show el)
