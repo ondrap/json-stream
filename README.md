@@ -47,8 +47,8 @@ Result of ElasticSearch bulk operations is a large JSON with this structure:
 ```
 
 We want the parser to return en empty list as soon as it encounters the *errors* key
-and the value is false. If it is true, we want the parser to return list of
-message ids with an error status. Then we can just take the first value from
+and the value is *false*. If the value is *true*, we want the parser to return a list of
+`_id` keys with an error status. Then we can just take the first value from
 the parser and close the HTTP connection.
 
 
@@ -66,7 +66,7 @@ bulkItemErrors = objectValues $
   where
     statusError s = s < 200 || s > (299 :: Int)
 
--- Some definitions to make the output nicer - might make it to next version
+-- Some definitions to make the definition nicer - might make it to next version
 arrayOf = array
 (.:) = objectWithKey
 is = filterI
