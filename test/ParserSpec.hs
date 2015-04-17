@@ -9,6 +9,7 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
+import Control.Monad (forM_)
 
 import Data.JsonStream.Parser
 import Data.JsonStream.TokenParser
@@ -174,6 +175,33 @@ errTests = describe "Tests of previous errors" $
         res2 = parse (arrayOf (pure True)) test2 :: [Bool]
     length res2 `shouldBe` 4
 
+aeCompare :: Spec
+aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
+  let values = [
+          "{}"
+        , "{ \"v\":\"1\"} "
+        , "{ \"v\":\"1\"\r\n} "
+        , "{ \"v\":1}"
+        , "{ \"v\":\"ab'c\"}"
+        , "{ \"PI\":3.141E-10}"
+        , "{ \"PI\":3.141e-10}"
+        , "{ \"v\":12345123456789} "
+        , "{ \"v\":123456789123456789123456789}"
+        , "[ 1,2,3,4] "
+        , "[ \"1\",\"2\",\"3\",\"4\"] "
+        , "[ { }, { },[]] "
+        , "{ \"v\":\"\\u2000\\u20ff\"} "
+        , "{ \"v\":\"\\u2000\\u20FF\"} "
+        , "{ \"a\":\"hp://foo\"} "
+        , "{ \"a\":null} "
+        , "{ \"a\":true} "
+        , "  { \"a\" : true }   "
+        , "{ \"v\":1.7976931348623157E308} "
+        ]
+  forM_ values $ \test -> it ("Parses " ++ show test ++ " the same as aeson") $ do
+    let resStream = head $ parseByteString value test :: AE.Value
+    let Just resAeson = AE.decode (BL.fromChunks [test])
+    resStream `shouldBe` resAeson
 
 spec :: Spec
 spec = do
@@ -182,6 +210,7 @@ spec = do
   specEdge
   specControl
   errTests
+  aeCompare
 
 main :: IO ()
 main = do

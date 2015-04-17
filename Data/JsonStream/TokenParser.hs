@@ -224,44 +224,43 @@ parseNumber :: TokenParser ()
 parseNumber = do
     tnumber <- getWhile (\c -> isDigit c || c == '.' || c == '+' || c == '-' || c == 'e' || c == 'E')
     let
-      ([(texp, _), (frac, frdigits), (num, numdigits), (csign, _)], rest) =
-              foldl parseStep ([], tnumber) [parseSign, parseDecimal, parseFract, parseE]
+      (csign, r1) = parseSign tnumber :: (Int, BS.ByteString)
+      ((num, numdigits), r2) = parseDecimal r1 :: ((Integer, Int), BS.ByteString)
+      ((frac, frdigits), r3) = parseFract r2 :: ((Int, Int), BS.ByteString)
+      (texp, rest) = parseE r3
+
     when (numdigits == 0 || not (BS.null rest)) failTok
 
-    let dpart = fromIntegral csign * (fromIntegral num * (10 ^ frdigits) + fromIntegral frac) :: Integer
+    let dpart = fromIntegral csign * (num * (10 ^ frdigits) + fromIntegral frac) :: Integer
         e = texp - frdigits
     yield $ JValue $ AE.Number $ scientific dpart e
   where
-    parseStep :: ([(Int, Int)], BS.ByteString) -> (BS.ByteString -> ((Int, Int), BS.ByteString)) -> ([(Int, Int)], BS.ByteString)
-    parseStep (lst, txt) f =
-      let (newi, rest) = f txt
-      in (newi:lst, rest)
-
     parseFract txt
       | BS.null txt = ((0, 0), txt)
       | BS.head txt == '.' = parseDecimal (BS.tail txt)
       | otherwise = ((0,0), txt)
 
     parseE txt
-      | BS.null txt = ((0, 0), txt)
+      | BS.null txt = (0, txt)
       | firstc == 'e' || firstc == 'E' =
-              let ((sign, d1), rest) = parseSign (BS.tail txt)
-                  ((dnum, d2), trest) = parseDecimal rest
-              in ((dnum * sign, d1 + d2), trest)
-      | otherwise = ((0,0), txt)
+              let (sign, rest) = parseSign (BS.tail txt)
+                  ((dnum, _), trest) = parseDecimal rest :: ((Int, Int), BS.ByteString)
+              in (dnum * sign, trest)
+      | otherwise = (0, txt)
       where
         firstc = BS.head txt
 
     parseSign txt
-      | BS.null txt = ((1, 0), txt)
-      | BS.head txt == '+' = ((1, 1), BS.tail txt)
-      | BS.head txt == '-' = ((-1, 1), BS.tail txt)
-      | otherwise = ((1, 0), txt)
+      | BS.null txt = (1, txt)
+      | BS.head txt == '+' = (1, BS.tail txt)
+      | BS.head txt == '-' = (-1, BS.tail txt)
+      | otherwise = (1, txt)
 
     parseDecimal txt
       | BS.null txt = ((0, 0), txt)
       | otherwise = parseNum txt (0,0)
 
+    -- parseNum :: BS.ByteString -> (Integer, Int) -> ((Integer, Int), BS.ByteString)
     parseNum txt (!start, !digits)
       | BS.null txt = ((start, digits), txt)
       | dchr >= 48 && dchr <= 57 = parseNum (BS.tail txt) (start * 10 + fromIntegral (dchr - 48), digits + 1)
