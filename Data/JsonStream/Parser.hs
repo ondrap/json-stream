@@ -19,6 +19,9 @@ module Data.JsonStream.Parser (
     -- * How to use this library
     -- $use
 
+    -- * Constant space decoding
+    -- $constant
+
     -- * The @Parser@ type
     Parser
   , ParseOutput(..)
@@ -27,8 +30,13 @@ module Data.JsonStream.Parser (
   , runParser'
   , parseByteString
   , parseLazyByteString
-    -- * Basic JSON parsers
+    -- * FromJSON parser
   , value
+    -- * Constant space parsers
+  , string
+  , number
+  , bool
+    -- * Structured parsers
   , objectWithKey
   , objectItems
   , objectValues
@@ -40,7 +48,6 @@ module Data.JsonStream.Parser (
   , filterI
   , toList
   , defaultValue
-  , catchFail
 ) where
 
 import           Control.Applicative
@@ -48,6 +55,7 @@ import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
+import           Data.Scientific             (Scientific)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
 
@@ -124,7 +132,7 @@ array' valparse = Parser $ \tp ->
     (PartialResult ArrayBegin ntp _) -> arrcontent 0 (callParse (valparse 0) ntp)
     (PartialResult el ntp _)
       | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
-      | otherwise -> Failed ("Array - unexpected token: " ++ show el)
+      | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok _) -> MoreData (array' valparse, ntok)
     (TokFailed _) -> Failed "Array - token failed"
   where
@@ -162,7 +170,7 @@ object' valparse = Parser $ \tp ->
     (PartialResult ObjectBegin ntp _) -> objcontent (keyValue ntp)
     (PartialResult el ntp _)
       | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
-      | otherwise -> Failed ("Object - unexpected token: " ++ show el)
+      | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok _) -> MoreData (object' valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
@@ -212,6 +220,39 @@ aeValue = Parser value'
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = Failed ("aeValue - unexpected token: " ++ show el)
 
+-- | Convert a strict aeson value (no object/array) to a value.
+-- Non-matching type is ignored and not parsed (unlike 'value')
+jvalue :: (AE.Value -> Maybe a) -> Parser a
+jvalue convert = Parser value'
+  where
+    value' (TokFailed _) = Failed "Value - token failed"
+    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
+    value' (PartialResult (JValue val) ntok _) =
+          case convert val of
+            Just convValue -> Yield convValue (Done ntok)
+            Nothing -> Done ntok
+    value' tp@(PartialResult el ntok _)
+      | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
+      | otherwise = callParse ignoreVal tp
+
+string :: Parser T.Text
+string = jvalue cvt
+  where
+    cvt (AE.String txt) = Just txt
+    cvt _ = Nothing
+
+number :: Parser Scientific
+number = jvalue cvt
+  where
+    cvt (AE.Number num) = Just num
+    cvt _ = Nothing
+
+bool :: Parser Bool
+bool = jvalue cvt
+  where
+    cvt (AE.Bool b) = Just b
+    cvt _ = Nothing
+
 -- | Match 'FromJSON' value.
 value :: AE.FromJSON a => Parser a
 value = Parser $ \ntok -> loop (callParse aeValue ntok)
@@ -222,7 +263,7 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
     loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
     loop (Yield v np) =
       case AE.fromJSON v of
-        AE.Error err -> Failed err
+        AE.Error _ -> loop np
         AE.Success res -> Yield res (loop np)
 
 -- | Skip value; cheat to avoid parsing and make it faster
@@ -279,22 +320,6 @@ defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valpars
     loop _ (UnexpectedEnd el b) = UnexpectedEnd el b
     loop found (MoreData (Parser np, ntok)) = MoreData (Parser (loop found . np), ntok)
     loop _ (Yield v np) = Yield v (loop True np)
-
--- | Catch an error in underlying parser.
-catchFail :: Parser a -> Parser a
-catchFail valparse = Parser $ \tok -> process (callParse valparse tok) (callParse ignoreVal tok)
-  where -- Call ignoreVal in parallel, switch to it if the first parser fails
-    process (Yield v np1) p2 = Yield v (process np1 p2)
-    process _ (Failed err) = Failed err
-    process (Done ntok) _ = Done ntok
-    process _ (Done ntok) = Done ntok
-    process (UnexpectedEnd el ntok) _ = UnexpectedEnd el ntok
-    process _ (UnexpectedEnd el ntok) = UnexpectedEnd el ntok
-    process (MoreData (np1, ntok1)) (MoreData (np2, _)) =
-        MoreData (Parser (\tok -> process (callParse np1 tok) (callParse np2 tok)), ntok1)
-    process p1@(Failed _) (MoreData (np2, ntok2)) =
-        MoreData (Parser (process p1 . callParse np2), ntok2)
-    process _ _ = Failed "Unexpected error in parallel processing catchFail."
 
 -- | Result of parsing. Contains continuations to continue parsing.
 data ParseOutput a = ParseYield a (ParseOutput a) -- ^ Returns a value from a parser.
@@ -366,3 +391,24 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- is needed to be held in memory with parallel parsers.
 --
 -- More examples are available on <https://github.com/ondrap/json-stream>.
+
+
+-- $constant
+-- Constant space decoding is possible if the grammar does not specify non-constant
+-- operation. The non-constant operations are 'value', 'toList' and in some instances
+-- '<*>'.
+--
+-- The 'value' parser works by creating an aeson AST and passing it to the
+-- parseJSON method. The parsing process can consume lot of data before failing
+-- in parseJSON. To achieve constant space the parsers 'string', 'number' and 'bool'
+-- must be used; these parsers reject and do not parse data if it does not match the
+-- type.
+--
+-- The 'toList' parser works by accumulating all obtained values. Obviously, number
+-- of such values influences the amount of used memory.
+--
+-- The '<*>' operator runs both parsers in parallel and when they are both done, it
+-- produces combinations of the received values. It is constant-space as long as the
+-- child parsers produce constant number of values. This can be achieved by using
+-- 'arrayWithIndex' and 'objectWithKey' functions that are guaranteed to return only
+-- one value.

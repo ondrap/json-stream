@@ -151,22 +151,34 @@ specControl = describe "Control parser" $ do
                              <*> defaultValue "default-key2" (objectWithKey "key2" value)
         res = parse parser test :: [(T.Text, T.Text)]
     res `shouldBe` [("value1","value2"),("test","default-key2"),("default-key1","default-key2")]
-  it "catchFail" $ do
-    let test = "[{\"key1\":\"pre1\", \"key2\":\"value1\"}, {\"key1\":12}, {\"key1\":\"after1\", \"key2\": \"v2\"}]"
-        parser = arrayOf $ (,) <$> (objectWithKey "key1" value)
-                             <*> (objectWithKey "key2" value)
-        res = parse parser test :: [(T.Text, T.Text)]
-    ((last res) `seq` return ()) `shouldThrow` anyException
-    let parser2 = arrayOf $ (,) <$> (objectWithKey "key1" $ catchFail value)
-                              <*> (objectWithKey "key2" value)
-        -- Test it so that we get many calls to MoreData
-        pmsg = BL.fromChunks $ map BS.singleton (BS.unpack test)
-        res2 = parseLazyByteString parser2 pmsg :: [(T.Text, T.Text)]
-    res2 `shouldBe` [("pre1","value1"),("after1","v2")]
+
+  it "ignores non-match for array" $ do
+    let test = "[1,2,[3,4,5]]"
+        parser = arrayOf (arrayOf value)
+        res = parse parser test :: [Int]
+    res `shouldBe` [3,4,5]
+
+  it "ignores non-match for object" $ do
+    let test = "[1,2,{\"test\": 3}]"
+        parser = arrayOf $ objectWithKey "test" value
+        res = parse parser test :: [Int]
+    res `shouldBe` [3]
+  it "ignores non-match for string" $ do
+    let test = "[1,2,[\"a\", 3, null], \"test\",{}, \"test2\"]"
+        res = parse (arrayOf string) test :: [T.Text]
+    res `shouldBe` ["test", "test2"]
+  -- it "ignores non-match for number" $ do
+  --   let test = "[{\"aa\":3},2,3,\"test\",4, \"test2\"]"
+  --       res = parse (realToFrac <$> arrayOf string) test :: [Int]
+  --   res `shouldBe` [2,3,4]
+  it "ignores non-match for bool" $ do
+    let test = "[1,[],true,\"test\",{\"t\":true}, \"test2\",false]"
+        res = parse (arrayOf bool) test :: [Bool]
+    res `shouldBe` [True, False]
 
 -- Tests of things that were found to be buggy
 errTests :: Spec
-errTests = describe "Tests of previous errors" $
+errTests = describe "Tests of previous errors" $ do
   it "arrayOf (pure True) should return only n*True, not (n+1)" $ do
     let test1 = "[]"
         res1 = parse (arrayOf (pure True)) test1 :: [Bool]
@@ -174,6 +186,10 @@ errTests = describe "Tests of previous errors" $
     let test2 = "[{},2,3,[]]"
         res2 = parse (arrayOf (pure True)) test2 :: [Bool]
     length res2 `shouldBe` 4
+  it "objectWithKey should return only first key with given name" $ do
+    let test1 = "{\"test1\":1, \"test2\":2, \"test1\": 3}"
+        res1 = parse (objectWithKey "test1" value) test1 :: [Int]
+    res1 `shouldBe` [1]
 
 aeCompare :: Spec
 aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
