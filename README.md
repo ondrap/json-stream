@@ -56,10 +56,10 @@ the parser and close the HTTP connection.
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
 resultParser =   (const [] <$> is not ("errors" .: value))
-              <|> toList ("items" .: arrayOf bulkItemErrors)
+              <|> toList ("items" .: arrayOf bulkItemError)
 
-bulkItemErrors :: Parser (Text, Text)
-bulkItemErrors = objectValues $
+bulkItemError :: Parser (Text, Text)
+bulkItemError = objectValues $
     (,) <$> "_id" .: value
         <*> defaultValue "Unknown error" ("error" .: value)
         <*  is statusError ("status" .: value)
