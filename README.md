@@ -51,7 +51,7 @@ Result of ElasticSearch bulk operations is a large JSON with this structure:
 }
 ```
 
-We want the parser to return en empty list as soon as it encounters the *errors* key
+We want the parser to return an empty list as soon as it encounters the *errors* key
 and the value is *false*. If the value is *true*, we want the parser to return a list of
 `_id` keys with an error status. Then we can just take the first value from
 the parser and close the HTTP connection.

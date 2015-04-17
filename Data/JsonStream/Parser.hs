@@ -452,15 +452,15 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 --
 -- json-stream style parsing would rather look like this:
 --
--- > >>> parseByteString (array value) "[1,2,3]" :: [Int]
+-- > >>> parseByteString (array integer) "[1,2,3]" :: [Int]
 -- > [1,2,3]
 --
 -- Parsers can be combinated using  '<*>' and '<|>' operators. These operators cause
 -- parallel parsing and yield some combination of the parsed values.
 --
 -- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
--- > >>> let parser = array $ (,) <$> "name" .: value
--- >                              <*> "age" .: value
+-- > >>> let parser = array $ (,) <$> "name" .: string
+-- >                              <*> "age"  .: integer
 -- > >>> parseByteString  parser text :: [(Text,Int)]
 -- > [("John",20),("Frank",30)]
 --
