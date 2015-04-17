@@ -168,22 +168,26 @@ arrayWithIndex idx valparse = array' itemFn
 indexedArray :: Parser a -> Parser (Int, a)
 indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
 
-object' :: (T.Text -> Parser a) -> Parser a
-object' valparse = Parser $ \tp ->
+-- | Go through an object; if once is True, yield only first success, then ignore the rest
+object' :: Bool -> (T.Text -> Parser a) -> Parser a
+object' once valparse = Parser $ \tp ->
   case tp of
-    (PartialResult ObjectBegin ntp _) -> objcontent (keyValue ntp)
+    (PartialResult ObjectBegin ntp _) -> objcontent False (keyValue ntp)
     (PartialResult el ntp _)
       | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
       | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
-    (TokMoreData ntok _) -> MoreData (object' valparse, ntok)
+    (TokMoreData ntok _) -> MoreData (object' once valparse, ntok)
     (TokFailed _) -> Failed "Object - token failed"
   where
-    objcontent (Done ntp) = objcontent (keyValue ntp) -- Reset to next value
-    objcontent (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent . np), ntok)
-    objcontent (Yield v np) = Yield v (objcontent np)
-    objcontent (Failed err) = Failed err
-    objcontent (UnexpectedEnd ObjectEnd ntp) = Done ntp
-    objcontent (UnexpectedEnd el _) = Failed ("Object - UnexpectedEnd: " ++ show el)
+    -- If we already yielded and should yield once, ignore the rest
+    objcontent yielded (Done ntp)
+      | once && yielded = callParse (ignoreVal' 1) ntp
+      | otherwise = objcontent yielded (keyValue ntp) -- Reset to next value
+    objcontent yielded (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent yielded. np), ntok)
+    objcontent _ (Yield v np) = Yield v (objcontent True np)
+    objcontent _ (Failed err) = Failed err
+    objcontent _ (UnexpectedEnd ObjectEnd ntp) = Done ntp
+    objcontent _ (UnexpectedEnd el _) = Failed ("Object - UnexpectedEnd: " ++ show el)
 
     keyValue (TokFailed _) = Failed "KeyValue - token failed"
     keyValue (TokMoreData ntok _) = MoreData (Parser keyValue, ntok)
@@ -195,15 +199,15 @@ object' valparse = Parser $ \tp ->
 
 -- | Match all key-value pairs of an object, return them as a tuple.
 objectItems :: Parser a -> Parser (T.Text, a)
-objectItems valparse = object' $ \(!key) -> (key,) <$> valparse
+objectItems valparse = object' False $ \(!key) -> (key,) <$> valparse
 
 -- | Match all key-value pairs of an object, return only values.
 objectValues :: Parser a -> Parser a
-objectValues valparse = object' (const valparse)
+objectValues valparse = object' False (const valparse)
 
 -- | Match only specific key of an object.
 objectWithKey :: T.Text -> Parser a -> Parser a
-objectWithKey name valparse = object' itemFn
+objectWithKey name valparse = object' True itemFn
   where
     itemFn key
       | key == name = valparse
