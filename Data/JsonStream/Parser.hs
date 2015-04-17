@@ -36,8 +36,9 @@ module Data.JsonStream.Parser (
   , string
   , number
   , integer
+  , real
   , bool
-    -- * Structured parsers
+    -- * Structure parsers
   , objectWithKey
   , objectItems
   , objectValues
@@ -45,6 +46,7 @@ module Data.JsonStream.Parser (
   , arrayOf
   , arrayWithIndex
   , indexedArray
+  , nullable
     -- * Parsing modifiers
   , filterI
   , toList
@@ -56,9 +58,8 @@ import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
-import           Data.Scientific             (Scientific)
-import           Data.Scientific             (isInteger, toBoundedInteger,
-                                              toRealFloat)
+import           Data.Scientific             (Scientific, isInteger,
+                                              toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
 
@@ -274,7 +275,14 @@ bool = jvalue cvt
     cvt (AE.Bool b) = Just b
     cvt _ = Nothing
 
--- nullable :: Parser a -> Maybe a
+-- | Parsing of field with possible null value
+nullable :: Parser a -> Parser (Maybe a)
+nullable valparse = Parser value'
+  where
+    value' (TokFailed _) = Failed "Nullable - token failed"
+    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
+    value' (PartialResult (JValue AE.Null) ntok _) = Yield Nothing (Done ntok)
+    value' tok@(PartialResult {}) = callParse (Just <$> valparse) tok
 
 
 -- | Match 'FromJSON' value.
@@ -290,9 +298,13 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
         AE.Error _ -> loop np
         AE.Success res -> Yield res (loop np)
 
+
 -- | Skip value; cheat to avoid parsing and make it faster
 ignoreVal :: Parser a
-ignoreVal = Parser $ handleTok 0
+ignoreVal = ignoreVal' 0
+
+ignoreVal' :: Int -> Parser a
+ignoreVal' stval = Parser $ handleTok stval
   where
     handleTok :: Int -> TokenResult -> ParseResult a
     handleTok _ (TokFailed _) = Failed "Token error"

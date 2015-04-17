@@ -26,8 +26,8 @@ The parsing process uses the least amount of memory possible and is completely l
 check for JSON syntax and the behaviour on incorrect JSON input is undefined (it cheats quite a lot).
 **The result on badly formed input is undefined.**
 
-- If the parser expects an array and a number is found, it is reported as an error.
-  Not finding a particular key in an object (`objectWithKey`) will not be reported as an error.
+- The parser generally does not fail. If the data does not match, the parser silently ignores it.
+  The failures are generally syntax errors of JSON decoding.
 - The ',' character in the lexer is treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
@@ -122,14 +122,6 @@ parseByteString :: Parser a -> BS.ByteString -> [a]
 [("key1",[1,2,3]),("key2",[5,6,7])]
 >>> parseByteString (arrayOf $ objectItems $ arrayOf value) (..json..) :: [(Text, Int)]
 [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
-
--- catchFail can catch an error - it depends where you put it
->>> parseByteString (arrayOf value) "[1,2,true,4,5]" :: [Int]
-[1,2*** Exception: when expecting a Int, encountered Boolean instead
->>> parseByteString (catchFail $ arrayOf value) "[1,2,true,4,5]" :: [Int]
-[1,2]
->>> parseByteString (arrayOf $ catchFail value) "[1,2,true,4,5]" :: [Int]
-[1,2,4,5]
 
 -- defaultValue produces a value if none is found
 -- JSON: [{"name":"John", "value": 12}, {"name":"name2"}]

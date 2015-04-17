@@ -35,14 +35,6 @@ testRemaining parser startdata = loop (runParser' parser startdata)
     loop (ParseYield _ np) = loop np
 
 
-tokenTest :: [BS.ByteString] -> [TokenResult]
-tokenTest chunks = reverse $ test [] (tail chunks) (tokenParser $ head chunks)
-  where
-    test acc [] o@(TokMoreData {}) = o:acc
-    test acc (dta:rest) o@(TokMoreData ntok _) = test (o:acc) rest (ntok dta)
-    test acc _ o@(TokFailed {}) = o:acc
-    test acc lst o@(PartialResult _ ntok _) = test (o:acc) lst ntok
-
 specBase :: Spec
 specBase = describe "Basic parsing" $ do
   it "Parses null values" $ do
@@ -175,6 +167,10 @@ specControl = describe "Control parser" $ do
     let test = "[1,[],true,\"test\",{\"t\":true}, \"test2\",false]"
         res = parse (arrayOf bool) test :: [Bool]
     res `shouldBe` [True, False]
+  it "nullable sets values correctly" $ do
+    let test = "[1,2,null,\"test\",null,3,[],{}]"
+        res = parse (arrayOf $ nullable integer) test :: [Maybe Int]
+    res `shouldBe` [Just 1, Just 2, Nothing, Nothing, Just 3]
 
 -- Tests of things that were found to be buggy
 errTests :: Spec
