@@ -55,6 +55,7 @@ newtype TokenParser a = TokenParser {
 
 instance Monad TokenParser where
   return x = TokenParser $ \s -> (Intermediate' x, s)
+  {-# INLINE return #-}
   m >>= mpost = TokenParser $ \s ->
                 let (res, newstate) = runTokParser m s
                 in case res of
@@ -62,6 +63,7 @@ instance Monad TokenParser where
                     PartialResult' el tokp context -> (PartialResult' el (tokp >>= mpost) context, newstate)
                     TokFailed' context -> (TokFailed' context, newstate)
                     Intermediate' result -> runTokParser (mpost result) newstate
+  {-# INLINE (>>=) #-}
 
 instance Functor TokenResult' where
   fmap f (TokMoreData' newp ctx) = TokMoreData' (fmap f . newp) ctx
