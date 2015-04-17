@@ -195,7 +195,7 @@ object' once valparse = Parser $ \tp ->
 
     keyValue (TokFailed _) = Failed "KeyValue - token failed"
     keyValue (TokMoreData ntok _) = MoreData (Parser keyValue, ntok)
-    keyValue (PartialResult (ObjectKey key) ntok _) = callParse (valparse key) ntok
+    keyValue (PartialResult (JValue (AE.String key)) ntok _) = callParse (valparse key) ntok
     keyValue (PartialResult el ntok _)
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = Failed ("Array - unexpected token: " ++ show el)
@@ -342,11 +342,9 @@ ignoreVal' stval = Parser $ handleTok stval
     handleTok level (TokMoreData ntok _) = MoreData (Parser (handleTok level), ntok)
 
     handleTok 0 (PartialResult (JValue _) ntok _) = Done ntok
-    handleTok 0 (PartialResult (ObjectKey _) ntok _) = Done ntok
     handleTok 0 (PartialResult elm ntok _)
       | elm == ArrayEnd || elm == ObjectEnd = UnexpectedEnd elm ntok
     handleTok level (PartialResult (JValue _) ntok _) = handleTok level ntok
-    handleTok level (PartialResult (ObjectKey _) ntok _) = handleTok level ntok
 
     handleTok 1 (PartialResult elm ntok _)
       | elm == ArrayEnd || elm == ObjectEnd = Done ntok
@@ -489,7 +487,7 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- in 'parseJSON'. To achieve constant space the parsers 'string', 'number', 'integer',
 -- 'real' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
--- type.
+-- type. (actaully, the 'string' is currently not bounded, therefore not constant space)
 --
 -- The 'toList' parser works by accumulating all obtained values. Obviously, number
 -- of such values influences the amount of used memory.

@@ -19,7 +19,7 @@ import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8', encodeUtf8)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
-               | ObjectKey T.Text | JValue AE.Value
+               | JValue AE.Value
                deriving (Show, Eq)
 
 -- Internal Interface for parsing monad
@@ -171,16 +171,6 @@ parseUnicode = do
       | isDigit c = fromEnum c - fromEnum '0'
       | otherwise = error "Incorrect hex input, internal error."
 
---
--- Choose if this is object key based on next character
-{-# INLINE chooseKeyOrValue #-}
-chooseKeyOrValue :: T.Text -> TokenParser ()
-chooseKeyOrValue text = do
-  chr <- peekChar
-  if | chr == ':' -> pickChar >> yield (ObjectKey text)
-     | isSpace chr -> getWhile' isSpace >> chooseKeyOrValue text
-     | otherwise -> yield $ JValue $ AE.String text
-
 -- | Parse string, when finished check if we are object in dict (followed by :) or just a string
 parseString :: TokenParser ()
 parseString = do
@@ -193,7 +183,7 @@ parseString = do
   where
     handleDecode str = case decodeUtf8' str of
           Left _ -> failTok
-          Right val -> chooseKeyOrValue val
+          Right val -> yield $ JValue $ AE.String val
     handleString acc = do
       chr <- peekChar
       case chr of
@@ -281,7 +271,7 @@ peekCharInMain = TokenParser handle
       | chr == ']' = (PartialResult' ArrayEnd contparse ctx, st)
       | chr == '{' = (PartialResult' ObjectBegin contparse ctx, st)
       | chr == '}' = (PartialResult' ObjectEnd contparse ctx, st)
-      | chr == ',' || isSpace chr = handle (State (BS.dropWhile (\c -> c == ',' || isSpace c) ctx) ctx)
+      | isBlankChar chr = handle (State (BS.dropWhile isBlankChar dta) ctx)
       | chr == '"' = runTokParser (parseString >> peekCharInMain) (State rest ctx)
       | otherwise   = (Intermediate' (BS.head dta), st)
       where
@@ -289,6 +279,7 @@ peekCharInMain = TokenParser handle
         rest = BS.tail dta
         -- Use data as new context
         contparse = TokenParser $ const $ handle (State rest rest)
+        isBlankChar c = c == ',' || c == ':' || isSpace c
 
 {-# INLINE mainParser #-}
 mainParser :: TokenParser ()
