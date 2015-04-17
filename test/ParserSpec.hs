@@ -167,10 +167,10 @@ specControl = describe "Control parser" $ do
     let test = "[1,2,[\"a\", 3, null], \"test\",{}, \"test2\"]"
         res = parse (arrayOf string) test :: [T.Text]
     res `shouldBe` ["test", "test2"]
-  -- it "ignores non-match for number" $ do
-  --   let test = "[{\"aa\":3},2,3,\"test\",4, \"test2\"]"
-  --       res = parse (realToFrac <$> arrayOf string) test :: [Int]
-  --   res `shouldBe` [2,3,4]
+  it "ignores non-match for number" $ do
+    let test = "[{\"aa\":3},2,3,\"test\",4, \"test2\"]"
+        res = parse (arrayOf integer) test :: [Int]
+    res `shouldBe` [2,3,4]
   it "ignores non-match for bool" $ do
     let test = "[1,[],true,\"test\",{\"t\":true}, \"test2\",false]"
         res = parse (arrayOf bool) test :: [Bool]

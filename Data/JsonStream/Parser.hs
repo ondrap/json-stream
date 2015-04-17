@@ -35,6 +35,7 @@ module Data.JsonStream.Parser (
     -- * Constant space parsers
   , string
   , number
+  , integer
   , bool
     -- * Structured parsers
   , objectWithKey
@@ -56,6 +57,8 @@ import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
 import           Data.Scientific             (Scientific)
+import           Data.Scientific             (isInteger, toBoundedInteger,
+                                              toRealFloat)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
 
@@ -235,23 +238,44 @@ jvalue convert = Parser value'
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = callParse ignoreVal tp
 
+-- | Parse string value, skip if is not a string value.
 string :: Parser T.Text
 string = jvalue cvt
   where
     cvt (AE.String txt) = Just txt
     cvt _ = Nothing
 
+-- | Parse number, return in scientific format.
 number :: Parser Scientific
 number = jvalue cvt
   where
     cvt (AE.Number num) = Just num
     cvt _ = Nothing
 
+-- | Parse to integer type
+integer :: (Integral i, Bounded i) => Parser i
+integer = jvalue cvt
+  where
+    cvt (AE.Number num)
+      | isInteger num = toBoundedInteger num
+    cvt _ = Nothing
+
+-- | Parse to float/double
+real :: RealFloat a => Parser a
+real = jvalue cvt
+  where
+    cvt (AE.Number num) = Just $ toRealFloat num
+    cvt _ = Nothing
+
+-- | Parse bool, skip if the type is not bool
 bool :: Parser Bool
 bool = jvalue cvt
   where
     cvt (AE.Bool b) = Just b
     cvt _ = Nothing
+
+-- nullable :: Parser a -> Maybe a
+
 
 -- | Match 'FromJSON' value.
 value :: AE.FromJSON a => Parser a
