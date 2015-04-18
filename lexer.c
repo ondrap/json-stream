@@ -13,7 +13,6 @@ enum states {
   STATE_TRUE,
   STATE_FALSE,
   STATE_NULL,
-  STATE_STRING_CONT,
   STATE_STRING_SPECCHAR
 };
 
@@ -62,16 +61,16 @@ typedef enum {
   LEX_ERROR = 2
 } resstate;
 
-int isempty(char chr) {
+static inline int isempty(char chr) {
   return (chr == ':' || chr == ',' || isspace(chr));
 }
 
-int isJnumber(char chr) {
+static inline int isJnumber(char chr) {
   return ((chr >= '0' && chr <= '9') || chr == '-' || chr == '.' || chr == '+' || chr == 'e' || chr == 'E');
 }
 
 // Add simple result to the result list
-void add_simple_res(enum restype restype, struct lexer *lexer) {
+static inline void add_simple_res(enum restype restype, struct lexer *lexer) {
   struct lexer_result *res = &lexer->result[lexer->result_num];
 
   res->restype = restype;
@@ -81,7 +80,7 @@ void add_simple_res(enum restype restype, struct lexer *lexer) {
   lexer->result_num++;
 }
 
-resstate handle_space(const char *input, struct lexer *lexer) {
+static inline resstate handle_space(const char *input, struct lexer *lexer) {
   /* Skip space */
   while (lexer->position < lexer->length && isempty(input[lexer->position]))
     lexer->position++;
@@ -92,7 +91,7 @@ resstate handle_space(const char *input, struct lexer *lexer) {
   return LEX_OK;
 }
 
-resstate handle_base(const char *input, struct lexer *lexer) {
+static inline resstate handle_base(const char *input, struct lexer *lexer) {
   if (handle_space(input, lexer))
     return LEX_OK;
 
@@ -119,7 +118,7 @@ resstate handle_base(const char *input, struct lexer *lexer) {
   return LEX_OK;
 }
 
-resstate handle_ident(const char *input, struct lexer *lexer, const char *ident, enum restype idtype) {
+static inline resstate handle_ident(const char *input, struct lexer *lexer, const char *ident, enum restype idtype) {
   while (lexer->position < lexer->length) {
     char chr = input[lexer->position];
     if (!ident[lexer->state_data]) {
@@ -183,7 +182,7 @@ resstate handle_number(const char *input, struct lexer *lexer) {
   return LEX_ERROR;
 }
 
-int safechar(char x) {
+static inline int safechar(char x) {
   return (x != '"' && x != '\\');
 }
 
@@ -221,7 +220,7 @@ resstate handle_string(const char *input, struct lexer *lexer) {
 }
 
 // Add a character to result, move position forward, change state back to string
-void emitchar(char ch, struct lexer *lexer) {
+static inline void emitchar(char ch, struct lexer *lexer) {
   struct lexer_result *res = &lexer->result[lexer->result_num];
 
   res->restype = RES_STRING_PARTIAL;
@@ -253,12 +252,23 @@ resstate handle_specchar(const char *input, struct lexer *lexer) {
   return LEX_OK;
 }
 
-resstate lexit(const char *input, struct lexer *lexer) {
+resstate lexit(const char *input, struct lexer *lexer)
+{
+  // static void* dispatch_table[] = {
+  // };
+  // #define DISPATCH() goto *dispatch_table[]
+
   resstate res = LEX_OK;
   while (lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0) {
     switch (lexer->current_state) {
         case STATE_BASE:
           res = handle_base(input, lexer);
+          break;
+        case STATE_STRING:
+          res = handle_string(input, lexer);
+          break;
+        case STATE_NUMBER:
+          res = handle_number(input, lexer);
           break;
         case STATE_TRUE:
           res = handle_ident(input, lexer, "true", RES_TRUE);
@@ -268,12 +278,6 @@ resstate lexit(const char *input, struct lexer *lexer) {
           break;
         case STATE_NULL:
           res = handle_ident(input, lexer, "null", RES_NULL);
-          break;
-        case STATE_NUMBER:
-          res = handle_number(input, lexer);
-          break;
-        case STATE_STRING:
-          res = handle_string(input, lexer);
           break;
         case STATE_STRING_SPECCHAR:
           res = handle_specchar(input, lexer);
@@ -338,13 +342,12 @@ void speedtest(int fd)
     char buffer[bufsize];
     struct lexer lexer;
 
-    lexer.current_state = STATE_BASE;
-    while (1) {
-        int size = read(fd, buffer, bufsize);
-        if (!size)
-            break;
+    int size = read(fd, buffer, bufsize);
+    for (int i=0; i< 50000; i++) {
+        lexer.current_state = STATE_BASE;
         lexer.position = 0;
         lexer.length = size;
+
         while (lexer.position < lexer.length) {
           lexer.result_num = 0;
           int res = lexit(buffer, &lexer);
@@ -352,8 +355,6 @@ void speedtest(int fd)
             printf("Error\n");
             return;
           }
-          counter += lexer.result_num;
-          // printf("%d\n", counter);
         }
     }
     printf("Total: %d\n", counter);
