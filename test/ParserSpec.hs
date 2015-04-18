@@ -210,6 +210,18 @@ errTests = describe "Tests of previous errors" $ do
         res = parse parser test1 :: [(T.Text, Int)]
     res `shouldBe` [("test1",1),("test2",-1),("test3",-1),("test4",-1)]
 
+  it "binds correctly convenience operators 2" $ do
+    let test1 = "{\"key\":[{\"key2\":13}]}"
+        parser = "key" .: 0 .! "key2" .: integer
+        res = parse parser test1 :: [Int]
+    res `shouldBe` [13]
+  it "binds correctly .!= at the last moment" $ do
+    let test1 = "{\"key3\":{}}"
+        parser = "key" .: "key2" .:? integer .!= 2
+        res = parse parser test1 :: [Int]
+    res `shouldBe` []
+
+
 aeCompare :: Spec
 aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
   let values = [

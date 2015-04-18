@@ -433,23 +433,27 @@ defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valpars
 -- | Synonym for 'objectWithKey'. Matches key in an object.
 (.:) :: T.Text -> Parser a -> Parser a
 (.:) = objectWithKey
+infixr 7 .:
 
 -- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
 --
 -- > key .:? val = defaultValue Nothing (key .: nullable val)
 (.:?) :: T.Text -> Parser a -> Parser (Maybe a)
 key .:? val = defaultValue Nothing (key .: nullable val)
+infixr 7 .:?
 
 -- | Converts 'Maybe' parser into normal one by providing default value instead of 'Nothing'.
 --
 -- > nullval .!= defval = fromMaybe defval <$> nullval
 (.!=) :: Parser (Maybe a) -> a -> Parser a
 nullval .!= defval = fromMaybe defval <$> nullval
+infixl 6 .!=
 
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
 (.!) :: Int -> Parser a -> Parser a
 (.!) = arrayWithIndexOf
+infixr 7 .!
 
 ---
 
@@ -537,9 +541,9 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- must be used; these parsers reject and do not parse data if it does not match the
 -- type.
 --
--- The object key length is limited to ~64K. Longer keys will be silently truncated.
+-- The object key length is limited to ~64K. Longer keys are be silently truncated.
 --
--- The 'toList' parser works by accumulating all obtained values. Obviously, number
+-- The 'toList' parser works by accumulating all matched values. Obviously, number
 -- of such values influences the amount of used memory.
 --
 -- The '<*>' operator runs both parsers in parallel and when they are both done, it
@@ -549,9 +553,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- parsers or limiting the number of returned elements with 'takeI'.
 --
 -- If the source object contains an object with multiple keys with a same name,
--- json-stream considers and matches the key multiple times. The only exception
--- is 'objectWithKey' ('.:' and '.:?') that return at most one value even when
--- it is occurs multiple times.
+-- json-stream matches the key multiple times. The only exception
+-- is 'objectWithKey' ('.:' and '.:?') that return at most one value for a given key.
 
 -- $aeson
 -- The parser uses internally "Data.Aeson" types, so that the FromJSON instances are
