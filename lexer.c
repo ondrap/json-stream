@@ -178,6 +178,39 @@ resstate handle_number(const char *input, struct lexer *lexer) {
   return LEX_OK;
 }
 
+int safechar(char x) {
+  return (x != '"' && x != '\\');
+}
+
+/* Handle beginning of a string, the '"' is already stripped */
+resstate handle_string(const char *input, struct lexer *lexer) {
+    int startposition = lexer->position;
+    for (char ch=input[lexer->position]; lexer->position < lexer->length && safechar(ch); ch = input[++lexer->position])
+      ;
+    if (lexer->position == lexer->length) {
+      printf("Not implemented.\n");
+      return LEX_ERROR;
+    } else if (input[lexer->position] == '"') {
+      struct lexer_result *res = &lexer->result[lexer->result_num];
+      res->restype = RES_STRING;
+      // We can just point directly to the input
+      res->startpos = startposition;
+      res->length = lexer->position - startposition;
+      lexer->result_num++;
+      lexer->current_state = STATE_BASE;
+      lexer->position++; // Skip the final '"'
+      return LEX_OK;
+    } else if (input[lexer->position] == '\\') {
+      printf("Not implemented;\n");
+      return LEX_ERROR;
+    }
+    printf("Internal error.\n");
+    return LEX_ERROR;
+}
+
+resstate handle_cont_string(const char *input, struct lexer *lexer) {
+}
+
 resstate lexit(const char *input, struct lexer *lexer) {
   resstate res = LEX_OK;
   while (lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0) {
@@ -197,6 +230,9 @@ resstate lexit(const char *input, struct lexer *lexer) {
         case STATE_NUMBER:
           res = handle_number(input, lexer);
           break;
+        case STATE_STRING:
+          res = handle_string(input, lexer);
+          break;
         default:
           printf("Unknown state: %d\n", lexer->current_state);
           return LEX_ERROR;
@@ -206,7 +242,7 @@ resstate lexit(const char *input, struct lexer *lexer) {
 }
 
 char *test1 = "{}";
-char *test2 = " [ [ true, false, null, 256, -3.14e+12  ]]   ";
+char *test2 = " [ [ true, false, null, 256, \"ondra\", \"martin\", -3.14e+12  ]]   ";
 
 int test(char *input) {
   struct lexer lexer;
@@ -217,6 +253,7 @@ int test(char *input) {
 
   int res = lexit(input, &lexer);
   printf("Result: %d\n", res);
+  printf("Count of results: %d\n", lexer.result_num);
   for (int i=0; i < lexer.result_num; i++) {
     struct lexer_result *res = &lexer.result[i];
     printf("Item: TYPE: %d POS: %d, LEN: %d\n",
@@ -232,6 +269,12 @@ int test(char *input) {
             for (int j=0; j < res->textlen; j++) {
               printf("%c", res->text[j]);
             }
+        }
+        printf("\n");
+    } else if (res->restype == RES_STRING) {
+        printf("String: ");
+        for (int j=res->startpos; j < res->startpos + res->length;j++) {
+          printf("%c", input[j]);
         }
         printf("\n");
     }
