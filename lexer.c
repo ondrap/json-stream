@@ -37,7 +37,8 @@ struct lexer_result {
   int restype;
   int startpos;
   int length;
-  int data; // Additional data to result
+
+  int textlen; // Additional data to result
   char text[MAX_NUMBER]; // Additional text for result
 };
 
@@ -47,6 +48,7 @@ struct lexer {
   int length;
 
   int state_data;
+  int state_text[MAX_NUMBER];
 
   int result_num;
   struct lexer_result result[RESULT_COUNT];
@@ -60,6 +62,10 @@ typedef enum {
 
 int isempty(char chr) {
   return (chr == ':' || chr == ',' || isspace(chr));
+}
+
+int isJnumber(char chr) {
+  return ((chr >= '0' && chr <= '9') || chr == '-' || chr == '.' || chr == '+' || chr == 'e' || chr == 'E');
 }
 
 // Add simple result to the result list
@@ -77,64 +83,107 @@ resstate handle_space(const char *input, struct lexer *lexer) {
   if (lexer->position >= lexer->length)
     return LEX_YIELD;
 
-  lexer->current_state = STATE_BASE;
   return LEX_OK;
 }
 
 resstate handle_base(const char *input, struct lexer *lexer) {
+  while (lexer->position < lexer->length) {
+    if (handle_space(input, lexer))
+      return LEX_OK;
 
-  char chr = input[lexer->position];
-  switch (chr) {
-    case '{': add_simple_res(RES_OPEN_BRACE, lexer); lexer->position++;break;
-    case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
-    case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
-    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
-    case '"': lexer->current_state = STATE_STRING; lexer->position++;break;
-    case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;break;
-    case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;break;
-    case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;break;
-    case '-': lexer->current_state = STATE_NUMBER; break;
-    default:
-      if (chr >= '0' && chr <= '9')
-        lexer->current_state = STATE_NUMBER;
-      else {
-        printf("Uknown character: %c\n", chr);
-        return LEX_ERROR;
-      }
+    char chr = input[lexer->position];
+    switch (chr) {
+      case '{': add_simple_res(RES_OPEN_BRACE, lexer); lexer->position++;break;
+      case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
+      case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
+      case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
+      case '"': lexer->current_state = STATE_STRING; lexer->position++;return LEX_OK;
+      case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
+      case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
+      case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;return LEX_OK;
+      default:
+        if (isJnumber(chr)) {
+          lexer->current_state = STATE_NUMBER;
+          lexer->state_data = 0;
+          return LEX_OK;
+        } else {
+          printf("Uknown character: %c\n", chr);
+          return LEX_ERROR;
+        }
+    }
   }
   return LEX_OK;
 }
 
 resstate handle_ident(const char *input, struct lexer *lexer, const char *ident, enum restype idtype) {
-  char chr = input[lexer->position];
-  if (!ident[lexer->state_data]) {
-    // Check that the next character is allowed
-    if (isempty(chr) || chr == ']' || chr == '}') {
-      add_simple_res(idtype, lexer);
-      lexer->current_state = STATE_BASE;
-      return LEX_OK;
-    } else {
-      printf("Unexpected next character in handle_ident: %d\n", chr);
-      return LEX_ERROR;
+  while (lexer->position < lexer->length) {
+    char chr = input[lexer->position];
+    if (!ident[lexer->state_data]) {
+      // Check that the next character is allowed
+      if (isempty(chr) || chr == ']' || chr == '}') {
+        add_simple_res(idtype, lexer);
+        lexer->current_state = STATE_BASE;
+        return LEX_OK;
+      } else {
+        printf("Unexpected next character in handle_ident: %d\n", chr);
+        return LEX_ERROR;
+      }
     }
+    if (ident[lexer->state_data] != chr)
+      return LEX_ERROR;
+    lexer->state_data++;
+    lexer->position++;
   }
-  if (ident[lexer->state_data] != chr)
-    return LEX_ERROR;
-  lexer->state_data++;
-  lexer->position++;
   return LEX_OK;
 }
 
+resstate handle_number(const char *input, struct lexer *lexer) {
+  /* Just eat characters that can be numbers and feed them to a table */
+  char chr;
+  // Copy the character to buffer
+  int startposition = lexer->position;
+  for (chr = input[lexer->position];
+       lexer->position < lexer->length && isJnumber(chr) && lexer->state_data < MAX_NUMBER;
+       chr=input[++lexer->position])
+       ;
 
+  if (lexer->position == lexer->length) {
+    // Copy data to temporary storage
+    for (int i=startposition; i < lexer->position; i++)
+        lexer->state_text[lexer->state_data++] = input[i];
+  } else if (!isJnumber(input[lexer->position])) {
+    // Emit the number
+    struct lexer_result *res = &lexer->result[lexer->result_num];
+    res->restype = RES_NUMBER;
+    if (lexer->state_data == 0) {
+        // We can just point directly to the input
+        res->textlen = 0;
+        res->startpos = startposition;
+        res->length = lexer->position - startposition;
+    } else {
+        // We must copy the data from temporary buffer
+        res->startpos = 0;
+        res->length = 0;
+        res->textlen = lexer->state_data;
+        memcpy(res->text, lexer->state_text, lexer->state_data);
+        // +the data from the beginning of the current buffer
+        memcpy(res->text + lexer->state_data, input, lexer->position);
+    }
+    lexer->result_num++;
+    lexer->current_state = STATE_BASE;
+  } else {
+    printf("Too long number.\n");
+    return LEX_ERROR;
+  }
+  return LEX_OK;
+}
 
 resstate lexit(const char *input, struct lexer *lexer) {
   resstate res = LEX_OK;
   while (lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0) {
     switch (lexer->current_state) {
         case STATE_BASE:
-          res = handle_space(input, lexer);
-          if (res == LEX_OK)
-            res = handle_base(input, lexer);
+          res = handle_base(input, lexer);
           break;
         case STATE_TRUE:
           res = handle_ident(input, lexer, "true", RES_TRUE);
@@ -145,6 +194,9 @@ resstate lexit(const char *input, struct lexer *lexer) {
         case STATE_NULL:
           res = handle_ident(input, lexer, "null", RES_NULL);
           break;
+        case STATE_NUMBER:
+          res = handle_number(input, lexer);
+          break;
         default:
           printf("Unknown state: %d\n", lexer->current_state);
           return LEX_ERROR;
@@ -154,7 +206,7 @@ resstate lexit(const char *input, struct lexer *lexer) {
 }
 
 char *test1 = "{}";
-char *test2 = " [ [ true, false, null  ]]   ";
+char *test2 = " [ [ true, false, null, 256, -3.14e+12  ]]   ";
 
 int test(char *input) {
   struct lexer lexer;
@@ -166,8 +218,23 @@ int test(char *input) {
   int res = lexit(input, &lexer);
   printf("Result: %d\n", res);
   for (int i=0; i < lexer.result_num; i++) {
-    printf("Item: TYPE: %d POS: %d, LEN: %d, DATA: %d\n",
-            lexer.result[i].restype, lexer.result[i].startpos, lexer.result[i].length, lexer.result[i].data);
+    struct lexer_result *res = &lexer.result[i];
+    printf("Item: TYPE: %d POS: %d, LEN: %d\n",
+            res->restype, res->startpos, res->length);
+    if (res->restype == RES_NUMBER) {
+        if (res->startpos) {
+            printf("Number: ");
+            for (int j=res->startpos; j < res->startpos + res->length;j++) {
+              printf("%c", input[j]);
+            }
+        } else {
+            printf("Buffered num: ");
+            for (int j=0; j < res->textlen; j++) {
+              printf("%c", res->text[j]);
+            }
+        }
+        printf("\n");
+    }
   }
   return 0;
 }
