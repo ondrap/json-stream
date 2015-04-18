@@ -193,7 +193,7 @@ object' once valparse = Parser $ moreData object''
          ObjectEnd -> UnexpectedEnd el ntok
          _ -> callParse ignoreVal tok
 
-    -- If we already yielded and should yield once, ignore the rest
+    -- If we already yielded and should yield once, ignore the rest of the object
     objcontent yielded (Done ntp)
       | once && yielded = callParse (ignoreVal' 1) ntp
       | otherwise = objcontent yielded (moreData keyValue ntp) -- Reset to next value
@@ -206,19 +206,19 @@ object' once valparse = Parser $ moreData object''
     keyValue _ el ntok =
       case el of
         JValue (AE.String key) -> callParse (valparse key) ntok
-        StringBegin str -> moreData (getLongString [str] (BS.length str)) ntok
+        StringBegin str -> moreData (getLongKey [str] (BS.length str)) ntok
         _| el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntok
          | otherwise -> Failed ("Object - unexpected token: " ++ show el)
 
-    getLongString acc len _ el ntok =
+    getLongKey acc len _ el ntok =
       case el of
         StringEnd
           | Right key <- decodeUtf8' (BL.fromChunks $ reverse acc) ->
               callParse (valparse $ T.concat $ TL.toChunks key) ntok
           | otherwise -> Failed "Error decoding UTF8"
         StringContent str
-          | len > objectKeyStringLimit -> moreData (getLongString acc len) ntok -- Ignore rest of key if over limit
-          | otherwise -> moreData (getLongString (str:acc) (len + BS.length str)) ntok
+          | len > objectKeyStringLimit -> callParse (ignoreStrRestThen ignoreVal) ntok
+          | otherwise -> moreData (getLongKey (str:acc) (len + BS.length str)) ntok
         _ -> Failed "Object longstr - unexpected token."
 
 -- | Helper function to deduplicate TokMoreData/FokFailed logic
@@ -237,7 +237,7 @@ objectItems valparse = object' False $ \(!key) -> (key,) <$> valparse
 
 -- | Match all key-value pairs of an object, return only values.
 -- If the source object defines same key multiple times, all values
--- are matched.
+-- are matched. Keys are ignored.
 objectValues :: Parser a -> Parser a
 objectValues valparse = object' False (const valparse)
 
@@ -289,11 +289,12 @@ longString mbounds = Parser $ moreData (handle [] 0)
         JValue (AE.String str) -> Yield str (Done ntok)
         StringBegin str -> moreData (handle [str] (BS.length str)) ntok
         StringContent str
-          | (Just bounds) <- mbounds, len > bounds
-                          -> moreData (handle acc len) ntok -- Ignore if the string is out of bounds
+          | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
+                          -> callParse (ignoreVal' 1) ntok
           | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
         StringEnd
-          | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc) -> Yield (T.concat $ TL.toChunks val) (Done ntok)
+          | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc)
+                      -> Yield (T.concat $ TL.toChunks val) (Done ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
@@ -301,9 +302,8 @@ longString mbounds = Parser $ moreData (handle [] 0)
 string :: Parser T.Text
 string = longString Nothing
 
--- | Stops parsing string after the limit is reached. The returned
--- string will be longer (up to a chunk size) than specified limit. New chunks will
--- not be added to the string once the limit is reached.
+-- | Stops parsing string after the limit is reached. The string will not be matched
+-- if it exceeds the size.
 safeString :: Int -> Parser T.Text
 safeString limit = longString (Just limit)
 
@@ -373,6 +373,17 @@ takeI num valparse = Parser $ \tok -> loop num (callParse valparse tok)
     loop n (MoreData (Parser np, ntok)) = MoreData (Parser (loop n . np), ntok)
     loop 0 (Yield _ np) = loop 0 np
     loop n (Yield v np) = Yield v (loop (n-1) np)
+
+-- | Skip rest of string + call next parser
+ignoreStrRestThen :: Parser a -> Parser a
+ignoreStrRestThen next = Parser $ moreData handle
+  where
+    handle _ el ntok =
+      case el of
+        StringContent _ -> moreData handle ntok
+        StringEnd -> callParse next ntok
+        _ -> Failed "Unexpected result in ignoreStrRestPlusOne"
+
 
 -- | Skip value; cheat to avoid parsing and make it faster
 ignoreVal :: Parser a
@@ -543,7 +554,7 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- must be used; these parsers reject and do not parse data if it does not match the
 -- type.
 --
--- The object key length is limited to ~64K. Longer keys are be silently truncated.
+-- The object key length is limited to ~64K. Object records with longer key are ignored and unparsed.
 --
 -- The 'toList' parser works by accumulating all matched values. Obviously, number
 -- of such values influences the amount of used memory.

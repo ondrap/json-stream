@@ -36,8 +36,7 @@ the parser is not guaranteed to fail on bad input.**
 - The ',' and ':' characters in the lexer are treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
-- The length of an object key is limited to ~64K, longer keys are silently truncated. This is needed
-  for really constant space parsing.
+- The length of an object key is limited to ~64K, records with longer keys are ignored. 
 
 ## Motivation
 
