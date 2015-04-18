@@ -36,6 +36,7 @@ module Data.JsonStream.Parser (
     -- * FromJSON parser
   , value
   , string
+  , bytestring
     -- * Constant space parsers
   , safeString
   , number
@@ -68,13 +69,14 @@ import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
+import           Data.Maybe                  (fromMaybe)
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
+import           Data.Text.Encoding          (encodeUtf8)
 import qualified Data.Text.Lazy              as TL
-import Data.Text.Lazy.Encoding (decodeUtf8')
+import           Data.Text.Lazy.Encoding     (decodeUtf8')
 import qualified Data.Vector                 as Vec
-import Data.Maybe (fromMaybe)
 
 import           Data.JsonStream.TokenParser
 
@@ -118,16 +120,18 @@ instance Applicative Parser where
   -- | Run both parsers in parallel using a shared token parser, combine results
   (<*>) m1 m2 = Parser $ \tok -> process ([], []) (callParse m1 tok) (callParse m2 tok)
     where
+      process ([], _) (Done ntok) _ = Done ntok -- Optimize, return immediately when first parser fails
+      process ([], _) (UnexpectedEnd el ntok) _ = UnexpectedEnd el ntok -- dtto
       process (lst1, lst2) (Yield v np1) p2 = process (v:lst1, lst2) np1 p2
       process (lst1, lst2) p1 (Yield v np2) = process (lst1, v:lst2) p1 np2
-      process _ (Failed err) _ = Failed err
-      process _ _ (Failed err) = Failed err
       process (lst1, lst2) (Done ntok) (Done _) =
         yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Done ntok)
       process (lst1, lst2) (UnexpectedEnd el ntok) (UnexpectedEnd _ _) =
         yieldResults [ mx my | mx <- lst1, my <- lst2 ] (UnexpectedEnd el ntok)
       process lsts (MoreData (np1, ntok1)) (MoreData (np2, _)) =
         MoreData (Parser (\tok -> process lsts (callParse np1 tok) (callParse np2 tok)), ntok1)
+      process _ (Failed err) _ = Failed err
+      process _ _ (Failed err) = Failed err
       process _ _ _ = Failed "Unexpected error in parallel processing <*>."
 
       yieldResults values end = foldr Yield end values
@@ -138,14 +142,14 @@ instance Alternative Parser where
   -- | Run both parsers in parallel using a shared token parser, yielding from both as the data comes
   (<|>) m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
     where
-      process (Done ntok) (Done _) = Done ntok
-      process (Failed err) _ = Failed err
-      process _ (Failed err) = Failed err
       process (Yield v np1) p2 = Yield v (process np1 p2)
       process p1 (Yield v np2) = Yield v (process p1 np2)
+      process (Done ntok) (Done _) = Done ntok
+      process (UnexpectedEnd el ntok) (UnexpectedEnd _ _) = UnexpectedEnd el ntok
       process (MoreData (np1, ntok)) (MoreData (np2, _)) =
           MoreData (Parser $ \tok -> process (callParse np1 tok) (callParse np2 tok), ntok)
-      process (UnexpectedEnd el ntok) (UnexpectedEnd _ _) = UnexpectedEnd el ntok
+      process (Failed err) _ = Failed err
+      process _ (Failed err) = Failed err
       process _ _ = error "Unexpected error in parallel processing <|>"
 
 array' :: (Int -> Parser a) -> Parser a
@@ -297,6 +301,19 @@ longString mbounds = Parser $ moreData (handle [] 0)
                       -> Yield (T.concat $ TL.toChunks val) (Done ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
+
+-- | Match string as a ByteString without decoding the data to UTF8 (large strings, small get always decoded).
+bytestring :: Parser BL.ByteString
+bytestring = Parser $ moreData (handle [])
+  where
+    handle acc tok el ntok =
+      case el of
+        JValue (AE.String str) -> Yield (BL.fromChunks [encodeUtf8 str]) (Done ntok)
+        StringBegin str -> moreData (handle [str]) ntok
+        StringContent str -> moreData (handle (str:acc)) ntok
+        StringEnd -> Yield (BL.fromChunks $ reverse acc) (Done ntok)
+        _ -> callParse ignoreVal tok
+
 
 -- | Parse string value, skip parsing otherwise.
 string :: Parser T.Text
