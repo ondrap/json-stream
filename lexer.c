@@ -29,18 +29,17 @@ enum restype {
   RES_CLOSE_BRACKET,
 
   RES_STRING_PARTIAL,
+  RES_NUMBER_PARTIAL
 };
 
 #define RESULT_COUNT 10000
-#define MAX_NUMBER 64
 
 struct lexer_result {
   int restype;
   int startpos;
   int length;
 
-  int textlen; // Additional data to result
-  char text[MAX_NUMBER]; // Additional text for result
+  int adddata; // Additional data to result
 };
 
 struct lexer {
@@ -49,7 +48,7 @@ struct lexer {
   int length;
 
   int state_data;
-  char state_text[MAX_NUMBER];
+  int state_data_2;
 
   int result_num;
   struct lexer_result result[RESULT_COUNT];
@@ -76,7 +75,6 @@ static inline void add_simple_res(enum restype restype, struct lexer *lexer) {
   res->restype = restype;
   res->startpos = lexer->position;
   res->length = 0;
-  res->textlen = 0;
   lexer->result_num++;
 }
 
@@ -142,44 +140,25 @@ static inline resstate handle_ident(const char *input, struct lexer *lexer, cons
 
 resstate handle_number(const char *input, struct lexer *lexer) {
   /* Just eat characters that can be numbers and feed them to a table */
-  char chr;
   // Copy the character to buffer
   int startposition = lexer->position;
-  for (chr = input[lexer->position];
-       lexer->position < lexer->length && isJnumber(chr) && lexer->state_data < MAX_NUMBER;
-       chr=input[++lexer->position])
+  for (;lexer->position < lexer->length && isJnumber(input[lexer->position]);++lexer->position)
        ;
 
+  struct lexer_result *res = &lexer->result[lexer->result_num];
   if (lexer->position == lexer->length) {
-    // Copy data to temporary storage
-    for (int i=startposition; i < lexer->position; i++) {
-        lexer->state_text[lexer->state_data++] = input[i];
-      }
-    return LEX_OK;
-  } else if (!isJnumber(input[lexer->position])) {
-    // Emit the number
-    struct lexer_result *res = &lexer->result[lexer->result_num];
+    res->restype = RES_NUMBER_PARTIAL;
+  } else {
     res->restype = RES_NUMBER;
-    if (lexer->state_data == 0) {
-        // We can just point directly to the input
-        res->textlen = 0;
-        res->startpos = startposition;
-        res->length = lexer->position - startposition;
-    } else {
-        // We must copy the data from temporary buffer
-        res->startpos = 0;
-        res->length = 0;
-        res->textlen = lexer->state_data + lexer->position;
-        memcpy(res->text, lexer->state_text, lexer->state_data);
-        // +the data from the beginning of the current buffer
-        memcpy(res->text + lexer->state_data, input, lexer->position);
-    }
-    lexer->result_num++;
     lexer->current_state = STATE_BASE;
-    return LEX_OK;
   }
+  // We can just point directly to the input
+  res->adddata = 0;
+  res->startpos = startposition;
+  res->length = lexer->position - startposition;
 
-  return LEX_ERROR;
+  lexer->result_num++;
+  return LEX_OK;
 }
 
 static inline int safechar(char x) {
@@ -195,7 +174,6 @@ resstate handle_string(const char *input, struct lexer *lexer) {
     struct lexer_result *res = &lexer->result[lexer->result_num];
     res->startpos = startposition;
     res->length = lexer->position - startposition;
-    res->textlen = 0;
     if (lexer->position == lexer->length || input[lexer->position] == '\\') {
       // Emit partial string
       res->restype = RES_STRING_PARTIAL;
@@ -226,8 +204,7 @@ static inline void emitchar(char ch, struct lexer *lexer) {
   res->restype = RES_STRING_PARTIAL;
   res->startpos = lexer->position;
   res->length = 0;
-  res->textlen = 1;
-  res->text[0] = ch;
+  res->adddata = ch;
 
   lexer->result_num++;
   lexer->position++;
@@ -287,7 +264,7 @@ resstate lexit(const char *input, struct lexer *lexer)
   state_string_specchar:
     res = handle_specchar(input, lexer);
     DISPATCH();
-    
+
   return res;
 }
 
@@ -301,10 +278,7 @@ void printres(const char *input, struct lexer_result *res) {
         printf("%c", input[j]);
       }
   } else {
-      printf("Buffered (%d): ", res->textlen);
-      for (int j=0; j < res->textlen; j++) {
-        printf("%c", (char) res->text[j]);
-      }
+      printf("Additional data: %d", res->adddata);
   }
   printf("\n");
 }
@@ -315,18 +289,23 @@ int test(char *input) {
   lexer.position = 0;
   lexer.length = strlen(input);
   while (lexer.position < lexer.length) {
+  // for (;*input;input++) {
+      // lexer.position = 0;
+      // lexer.length = 1;
       lexer.result_num = 0;
 
       int res = lexit(input, &lexer);
-      printf("Result: %d\n", res);
-      if (res == LEX_ERROR)
+      if (res == LEX_ERROR) {
+        printf("LEX ERROR\n");
         break;
-      printf("Count of results: %d\n", lexer.result_num);
+      }
+      if (lexer.result_num)
+        printf("Count of results: %d\n", lexer.result_num);
       for (int i=0; i < lexer.result_num; i++) {
         struct lexer_result *res = &lexer.result[i];
         printf("Item: TYPE: %d POS: %d, LEN: %d\n",
                 res->restype, res->startpos, res->length);
-        if (res->restype == RES_NUMBER) {
+        if (res->restype == RES_NUMBER || res->restype == RES_NUMBER_PARTIAL) {
             printres(input, res);
         } else if (res->restype == RES_STRING || res->restype == RES_STRING_PARTIAL) {
             printres(input, res);
@@ -362,11 +341,11 @@ void speedtest(int fd)
 }
 
 int main(void) {
-  // test(test2);
-  int fd = open("test.json", O_RDONLY);
-  if (fd == -1) {
-    perror("File");
-    return 0;
-  }
-  speedtest(fd);
+  test(test2);
+  // int fd = open("test.json", O_RDONLY);
+  // if (fd == -1) {
+  //   perror("File");
+  //   return 0;
+  // }
+  // speedtest(fd);
 }
