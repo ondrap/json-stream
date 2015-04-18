@@ -254,39 +254,40 @@ resstate handle_specchar(const char *input, struct lexer *lexer) {
 
 resstate lexit(const char *input, struct lexer *lexer)
 {
-  // static void* dispatch_table[] = {
-  // };
-  // #define DISPATCH() goto *dispatch_table[]
-
   resstate res = LEX_OK;
-  while (lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0) {
-    switch (lexer->current_state) {
-        case STATE_BASE:
-          res = handle_base(input, lexer);
-          break;
-        case STATE_STRING:
-          res = handle_string(input, lexer);
-          break;
-        case STATE_NUMBER:
-          res = handle_number(input, lexer);
-          break;
-        case STATE_TRUE:
-          res = handle_ident(input, lexer, "true", RES_TRUE);
-          break;
-        case STATE_FALSE:
-          res = handle_ident(input, lexer, "false", RES_FALSE);
-          break;
-        case STATE_NULL:
-          res = handle_ident(input, lexer, "null", RES_NULL);
-          break;
-        case STATE_STRING_SPECCHAR:
-          res = handle_specchar(input, lexer);
-          break;
-        default:
-          printf("Unknown state: %d\n", lexer->current_state);
-          return LEX_ERROR;
-    }
-  }
+  static void* dispatch_table[] = {
+      &&state_base, &&state_string, &&state_number, &&state_true,
+      &&state_false, &&state_null, &&state_string_specchar
+  };
+  #define DISPATCH() { \
+     if (!(lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0)) \
+        return res; \
+     goto *dispatch_table[lexer->current_state];\
+     }
+
+  DISPATCH();
+  state_base:
+    res = handle_base(input, lexer);
+    DISPATCH();
+  state_string:
+    res = handle_string(input, lexer);
+    DISPATCH();
+  state_number:
+    res = handle_number(input, lexer);
+    DISPATCH();
+  state_true:
+    res = handle_ident(input, lexer, "true", RES_TRUE);
+    DISPATCH();
+  state_false:
+    res = handle_ident(input, lexer, "false", RES_FALSE);
+    DISPATCH();
+  state_null:
+    res = handle_ident(input, lexer, "null", RES_NULL);
+    DISPATCH();
+  state_string_specchar:
+    res = handle_specchar(input, lexer);
+    DISPATCH();
+    
   return res;
 }
 
