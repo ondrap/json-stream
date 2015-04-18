@@ -8,7 +8,9 @@ enum states {
   STATE_NUMBER,
   STATE_TRUE,
   STATE_FALSE,
-  STATE_NULL
+  STATE_NULL,
+  STATE_STRING_CONT,
+  STATE_STRING_SPECCHAR
 };
 
 enum restype {
@@ -23,14 +25,10 @@ enum restype {
   RES_OPEN_BRACKET,
   RES_CLOSE_BRACKET,
 
-  RES_STRING_START,
-  RES_STRING_CONT,
-  RES_STRING_END,
-  RES_STRING_SPEC,
-  RES_STRING_UNI
+  RES_STRING_PARTIAL,
 };
 
-#define RESULT_COUNT 100
+#define RESULT_COUNT 1
 #define MAX_NUMBER 64
 
 struct lexer_result {
@@ -48,7 +46,7 @@ struct lexer {
   int length;
 
   int state_data;
-  int state_text[MAX_NUMBER];
+  char state_text[MAX_NUMBER];
 
   int result_num;
   struct lexer_result result[RESULT_COUNT];
@@ -70,8 +68,12 @@ int isJnumber(char chr) {
 
 // Add simple result to the result list
 void add_simple_res(enum restype restype, struct lexer *lexer) {
-  lexer->result[lexer->result_num].restype = restype;
-  lexer->result[lexer->result_num].startpos = lexer->position;
+  struct lexer_result *res = &lexer->result[lexer->result_num];
+
+  res->restype = restype;
+  res->startpos = lexer->position;
+  res->length = 0;
+  res->textlen = 0;
   lexer->result_num++;
 }
 
@@ -87,30 +89,28 @@ resstate handle_space(const char *input, struct lexer *lexer) {
 }
 
 resstate handle_base(const char *input, struct lexer *lexer) {
-  while (lexer->position < lexer->length) {
-    if (handle_space(input, lexer))
-      return LEX_OK;
+  if (handle_space(input, lexer))
+    return LEX_OK;
 
-    char chr = input[lexer->position];
-    switch (chr) {
-      case '{': add_simple_res(RES_OPEN_BRACE, lexer); lexer->position++;break;
-      case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
-      case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
-      case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
-      case '"': lexer->current_state = STATE_STRING; lexer->position++;return LEX_OK;
-      case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
-      case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
-      case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;return LEX_OK;
-      default:
-        if (isJnumber(chr)) {
-          lexer->current_state = STATE_NUMBER;
-          lexer->state_data = 0;
-          return LEX_OK;
-        } else {
-          printf("Uknown character: %c\n", chr);
-          return LEX_ERROR;
-        }
-    }
+  char chr = input[lexer->position];
+  switch (chr) {
+    case '{': add_simple_res(RES_OPEN_BRACE, lexer); lexer->position++;break;
+    case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
+    case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
+    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
+    case '"': lexer->current_state = STATE_STRING; lexer->position++;return LEX_OK;
+    case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
+    case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
+    case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;return LEX_OK;
+    default:
+      if (isJnumber(chr)) {
+        lexer->current_state = STATE_NUMBER;
+        lexer->state_data = 0;
+        return LEX_OK;
+      } else {
+        printf("Uknown character: %c\n", chr);
+        return LEX_ERROR;
+      }
   }
   return LEX_OK;
 }
@@ -149,8 +149,10 @@ resstate handle_number(const char *input, struct lexer *lexer) {
 
   if (lexer->position == lexer->length) {
     // Copy data to temporary storage
-    for (int i=startposition; i < lexer->position; i++)
+    for (int i=startposition; i < lexer->position; i++) {
         lexer->state_text[lexer->state_data++] = input[i];
+      }
+    return LEX_OK;
   } else if (!isJnumber(input[lexer->position])) {
     // Emit the number
     struct lexer_result *res = &lexer->result[lexer->result_num];
@@ -164,18 +166,17 @@ resstate handle_number(const char *input, struct lexer *lexer) {
         // We must copy the data from temporary buffer
         res->startpos = 0;
         res->length = 0;
-        res->textlen = lexer->state_data;
+        res->textlen = lexer->state_data + lexer->position;
         memcpy(res->text, lexer->state_text, lexer->state_data);
         // +the data from the beginning of the current buffer
         memcpy(res->text + lexer->state_data, input, lexer->position);
     }
     lexer->result_num++;
     lexer->current_state = STATE_BASE;
-  } else {
-    printf("Too long number.\n");
-    return LEX_ERROR;
+    return LEX_OK;
   }
-  return LEX_OK;
+
+  return LEX_ERROR;
 }
 
 int safechar(char x) {
@@ -187,28 +188,65 @@ resstate handle_string(const char *input, struct lexer *lexer) {
     int startposition = lexer->position;
     for (char ch=input[lexer->position]; lexer->position < lexer->length && safechar(ch); ch = input[++lexer->position])
       ;
-    if (lexer->position == lexer->length) {
-      printf("Not implemented.\n");
-      return LEX_ERROR;
+
+    struct lexer_result *res = &lexer->result[lexer->result_num];
+    res->startpos = startposition;
+    res->length = lexer->position - startposition;
+    res->textlen = 0;
+    if (lexer->position == lexer->length || input[lexer->position] == '\\') {
+      // Emit partial string
+      res->restype = RES_STRING_PARTIAL;
+      if (res->length) // Skip, if the string is empty
+          lexer->result_num++;
+      // If we stopped because of backslash, change state, move one forward
+      if (lexer->position < lexer->length) {
+          lexer->current_state = STATE_STRING_SPECCHAR;
+          lexer->position++;
+      }
+      return LEX_OK;
     } else if (input[lexer->position] == '"') {
-      struct lexer_result *res = &lexer->result[lexer->result_num];
       res->restype = RES_STRING;
       // We can just point directly to the input
-      res->startpos = startposition;
-      res->length = lexer->position - startposition;
       lexer->result_num++;
       lexer->current_state = STATE_BASE;
       lexer->position++; // Skip the final '"'
       return LEX_OK;
-    } else if (input[lexer->position] == '\\') {
-      printf("Not implemented;\n");
-      return LEX_ERROR;
     }
     printf("Internal error.\n");
     return LEX_ERROR;
 }
 
-resstate handle_cont_string(const char *input, struct lexer *lexer) {
+// Add a character to result, move position forward, change state back to string
+void emitchar(char ch, struct lexer *lexer) {
+  struct lexer_result *res = &lexer->result[lexer->result_num];
+
+  res->restype = RES_STRING_PARTIAL;
+  res->startpos = lexer->position;
+  res->length = 0;
+  res->textlen = 1;
+  res->text[0] = ch;
+
+  lexer->result_num++;
+  lexer->position++;
+  lexer->current_state = STATE_STRING;
+}
+
+resstate handle_specchar(const char *input, struct lexer *lexer) {
+  char chr = input[lexer->position];
+  switch (chr) {
+    case '"': emitchar('"', lexer);break;
+    case '\\':emitchar('\\', lexer);break;
+    case '/':emitchar('/', lexer);break;
+    case 'b':emitchar('\b', lexer);break;
+    case 'f':emitchar('\f', lexer);break;
+    case 'n':emitchar('\n', lexer);break;
+    case 'r':emitchar('\r', lexer);break;
+    case 't':emitchar('\t', lexer);break;
+//    case 'u':
+    default:
+      return LEX_ERROR;
+  }
+  return LEX_OK;
 }
 
 resstate lexit(const char *input, struct lexer *lexer) {
@@ -233,6 +271,9 @@ resstate lexit(const char *input, struct lexer *lexer) {
         case STATE_STRING:
           res = handle_string(input, lexer);
           break;
+        case STATE_STRING_SPECCHAR:
+          res = handle_specchar(input, lexer);
+          break;
         default:
           printf("Unknown state: %d\n", lexer->current_state);
           return LEX_ERROR;
@@ -242,46 +283,48 @@ resstate lexit(const char *input, struct lexer *lexer) {
 }
 
 char *test1 = "{}";
-char *test2 = " [ [ true, false, null, 256, \"ondra\", \"martin\", -3.14e+12  ]]   ";
+char *test2 = " [ [ true, false, null, 256, \"ond\\n\\nra\", \"martin\", -3.14e+12  ]]   ";
+
+void printres(const char *input, struct lexer_result *res) {
+  if (res->length) {
+      printf("Inline: ");
+      for (int j=res->startpos; j < res->startpos + res->length;j++) {
+        printf("%c", input[j]);
+      }
+  } else {
+      printf("Buffered (%d): ", res->textlen);
+      for (int j=0; j < res->textlen; j++) {
+        printf("%c", (char) res->text[j]);
+      }
+  }
+  printf("\n");
+}
 
 int test(char *input) {
   struct lexer lexer;
+  lexer.current_state = STATE_BASE;
   lexer.position = 0;
   lexer.length = strlen(input);
-  lexer.current_state = STATE_BASE;
-  lexer.result_num = 0;
+  while (lexer.position < lexer.length) {
+      lexer.result_num = 0;
 
-  int res = lexit(input, &lexer);
-  printf("Result: %d\n", res);
-  printf("Count of results: %d\n", lexer.result_num);
-  for (int i=0; i < lexer.result_num; i++) {
-    struct lexer_result *res = &lexer.result[i];
-    printf("Item: TYPE: %d POS: %d, LEN: %d\n",
-            res->restype, res->startpos, res->length);
-    if (res->restype == RES_NUMBER) {
-        if (res->startpos) {
-            printf("Number: ");
-            for (int j=res->startpos; j < res->startpos + res->length;j++) {
-              printf("%c", input[j]);
-            }
-        } else {
-            printf("Buffered num: ");
-            for (int j=0; j < res->textlen; j++) {
-              printf("%c", res->text[j]);
-            }
+      int res = lexit(input, &lexer);
+      printf("Result: %d\n", res);
+      printf("Count of results: %d\n", lexer.result_num);
+      for (int i=0; i < lexer.result_num; i++) {
+        struct lexer_result *res = &lexer.result[i];
+        printf("Item: TYPE: %d POS: %d, LEN: %d\n",
+                res->restype, res->startpos, res->length);
+        if (res->restype == RES_NUMBER) {
+            printres(input, res);
+        } else if (res->restype == RES_STRING || res->restype == RES_STRING_PARTIAL) {
+            printres(input, res);
         }
-        printf("\n");
-    } else if (res->restype == RES_STRING) {
-        printf("String: ");
-        for (int j=res->startpos; j < res->startpos + res->length;j++) {
-          printf("%c", input[j]);
-        }
-        printf("\n");
-    }
+      }
   }
   return 0;
 }
 
 int main(void) {
-  test(test2);
+  test(test1);
 }
