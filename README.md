@@ -33,9 +33,11 @@ the parser is not guaranteed to fail on bad input.**
 
 - The parser generally does not fail. If the data does not match, the parser silently ignores it.
   The failures should be only syntax errors in JSON.
-- The ',' character in the lexer is treated as white-space.
+- The ',' and ':' characters in the lexer are treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
+- The length of an object key is limited to ~64K, longer keys are silently truncated. This is needed
+  for really constant space parsing.
 
 ## Motivation
 
@@ -51,23 +53,22 @@ Result of ElasticSearch bulk operations is a large JSON with this structure:
 }
 ```
 
-We want the parser to return an empty list as soon as it encounters the *errors* key
+We want the parser to return an empty list immediately when it encounters the *errors* key
 and the value is *false*. If the value is *true*, we want the parser to return a list of
-`_id` keys with an error status. Then we can just take the first value from
-the parser and close the HTTP connection.
+`_id` keys with an error status.
 
 
 ```haskell
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
-resultParser = (const [] <$> filterI not ("errors" .: value))
+resultParser =    (const [] <$> filterI not ("errors" .: value))
               <|> toList ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)
 bulkItemError = objectValues $
-    (,) <$> "_id"   .: value
-        <*> "error" .: value
-        <*  filterI statusError ("status" .: value)
+    (,) <$> "_id"   .: string
+        <*> "error" .: string
+        <*  filterI statusError ("status" .: integer)
   where
     statusError s = s < 200 || s > (299 :: Int)
 
@@ -113,6 +114,7 @@ parseByteString :: Parser a -> ByteString -> [a]
 [(6,2),(6,1),(5,2),(5,1)]
 
 -- Use <|> to return both branches
+-- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
 >>> let parser = arrayOf $     "key1" .: (arrayOf value)
                            <|> "key2" .: (arrayOf value)
 >>> parse parser test :: [Int]
