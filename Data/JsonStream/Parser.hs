@@ -35,8 +35,9 @@ module Data.JsonStream.Parser (
   , parseLazyByteString
     -- * FromJSON parser
   , value
-    -- * Constant space parsers
   , string
+    -- * Constant space parsers
+  , boundedString
   , number
   , integer
   , real
@@ -69,6 +70,7 @@ import qualified Data.HashMap.Strict         as HMap
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
+import Data.Text.Encoding (decodeUtf8')
 import qualified Data.Vector                 as Vec
 import Data.Maybe (fromMaybe)
 
@@ -172,16 +174,17 @@ arrayWithIndex idx valparse = array' itemFn
 indexedArray :: Parser a -> Parser (Int, a)
 indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
 
+
 -- | Go through an object; if once is True, yield only first success, then ignore the rest
 object' :: Bool -> (T.Text -> Parser a) -> Parser a
 object' once valparse = Parser $ \tp ->
   case tp of
-    (PartialResult ObjectBegin ntp _) -> objcontent False (keyValue ntp)
-    (PartialResult el ntp _)
+    PartialResult ObjectBegin ntp _ -> objcontent False (keyValue ntp)
+    PartialResult el ntp _
       | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
       | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
-    (TokMoreData ntok _) -> MoreData (object' once valparse, ntok)
-    (TokFailed _) -> Failed "Object - token failed"
+    TokMoreData ntok _ -> MoreData (object' once valparse, ntok)
+    TokFailed _ -> Failed "Object - token failed"
   where
     -- If we already yielded and should yield once, ignore the rest
     objcontent yielded (Done ntp)
@@ -196,9 +199,19 @@ object' once valparse = Parser $ \tp ->
     keyValue (TokFailed _) = Failed "KeyValue - token failed"
     keyValue (TokMoreData ntok _) = MoreData (Parser keyValue, ntok)
     keyValue (PartialResult (JValue (AE.String key)) ntok _) = callParse (valparse key) ntok
+    keyValue (PartialResult (StringBegin str) ntok _) = getLongString [str] (BS.length str) ntok
     keyValue (PartialResult el ntok _)
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
-      | otherwise = Failed ("Array - unexpected token: " ++ show el)
+      | otherwise = Failed ("Object - unexpected token: " ++ show el)
+
+    getLongString acc !len tok =
+      case tok of
+        PartialResult StringEnd ntok _
+          | Right key <- decodeUtf8' (BS.concat $ reverse acc) -> callParse (valparse key) ntok
+          | otherwise -> Failed "Error decoding UTF8"
+        PartialResult (StringContent str) ntok _ -> getLongString (str:acc) (len + BS.length str) ntok
+        TokMoreData ntok _ -> MoreData (Parser (getLongString acc len), ntok)
+        _ -> Failed "Object longstr - unexpected token."
 
 
 -- | Match all key-value pairs of an object, return them as a tuple.
@@ -230,6 +243,7 @@ aeValue = Parser value'
     value' (TokFailed _) = Failed "Value - token failed"
     value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
     value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
+    value' tok@(PartialResult (StringBegin _) _ _) = callParse (AE.String <$> longString Nothing) tok
     value' tok@(PartialResult ArrayBegin _ _) =
         AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
     value' tok@(PartialResult ObjectBegin _ _) =
@@ -253,12 +267,35 @@ jvalue convert = Parser value'
       | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
       | otherwise = callParse ignoreVal tp
 
+
+-- | Match a possibly bounded string roughly limited by a limit
+longString :: Maybe Int -> Parser T.Text
+longString mbounds = Parser $ handle [] 0
+  where
+    handle acc !len tp =
+      case tp of
+        PartialResult (JValue (AE.String str)) ntok _ -> Yield str (Done ntok)
+        PartialResult (StringBegin str) ntp _ -> handle [str] (BS.length str) ntp
+        PartialResult (StringContent str) ntp _
+          | (Just bounds) <- mbounds,
+            len > bounds             -> handle acc len ntp
+          | otherwise -> handle (str:acc) (len + BS.length str) ntp
+        PartialResult StringEnd ntp _
+          | Right val <- decodeUtf8' (BS.concat $ reverse acc) -> Yield val (Done ntp)
+          | otherwise -> Failed "Error decoding UTF8"
+        tok@(PartialResult {}) -> callParse ignoreVal tok
+        TokMoreData ntok _ -> MoreData (Parser (handle acc len), ntok)
+        TokFailed _ -> Failed "String - token failed"
+
 -- | Parse string value, skip parsing otherwise.
 string :: Parser T.Text
-string = jvalue cvt
-  where
-    cvt (AE.String txt) = Just txt
-    cvt _ = Nothing
+string = longString Nothing
+
+-- | Stops parsing string after the limit is reached. The returned
+-- string will be longer  than specified limit, but new chunks will
+-- not be added to the string.
+boundedString :: Int -> Parser T.Text
+boundedString limit = longString (Just limit)
 
 -- | Parse number, return in scientific format.
 number :: Parser Scientific
@@ -347,10 +384,13 @@ ignoreVal' stval = Parser $ handleTok stval
     handleTok level (PartialResult (JValue _) ntok _) = handleTok level ntok
 
     handleTok 1 (PartialResult elm ntok _)
-      | elm == ArrayEnd || elm == ObjectEnd = Done ntok
+      | elm == ArrayEnd || elm == ObjectEnd || elm == StringEnd = Done ntok
     handleTok level (PartialResult elm ntok _)
       | elm == ArrayBegin || elm == ObjectBegin = handleTok (level + 1) ntok
       | elm == ArrayEnd || elm == ObjectEnd = handleTok (level - 1) ntok
+    handleTok level (PartialResult (StringBegin _) ntok _) = handleTok (level + 1) ntok
+    handleTok level (PartialResult StringEnd ntok _) = handleTok (level - 1) ntok
+    handleTok level (PartialResult (StringContent _) ntok _) = handleTok level ntok
     handleTok _ _ = Failed "UnexpectedEnd "
 
 -- | Fetch yields of a function and return them as list.
@@ -479,15 +519,16 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 
 -- $constant
 -- Constant space decoding is possible if the grammar does not specify non-constant
--- operation. The non-constant operations are 'value', 'toList' and in some instances
--- '<*>'.
+-- operation. The non-constant operations are 'value', 'string', 'toList' and in some instances
+-- '<*>' (and currently object accessors as the key size is not limited).
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
 -- 'parseJSON' method. The AST can consume a lot of memory before it is rejected
--- in 'parseJSON'. To achieve constant space the parsers 'string', 'number', 'integer',
+-- in 'parseJSON'. To achieve constant space the parsers 'boundedString', 'number', 'integer',
 -- 'real' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
--- type. (actaully, the 'string' is currently not bounded, therefore not constant space)
+-- type. (Currently the object keys are not bounded, although it is quite easy to add,
+-- if you are interested, let me know).
 --
 -- The 'toList' parser works by accumulating all obtained values. Obviously, number
 -- of such values influences the amount of used memory.

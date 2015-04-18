@@ -19,6 +19,7 @@ import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8', encodeUtf8)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
+               | StringBegin BS.ByteString | StringContent BS.ByteString | StringEnd
                | JValue AE.Value
                deriving (Show, Eq)
 
@@ -179,25 +180,29 @@ parseString = do
     chr <- peekChar
     if chr == '"'
       then pickChar >> handleDecode firstpart
-      else handleString [firstpart]
+      else do
+        yield $ StringBegin firstpart
+        handleString
   where
     handleDecode str = case decodeUtf8' str of
           Left _ -> failTok
           Right val -> yield $ JValue $ AE.String val
-    handleString acc = do
+    handleString = do
       chr <- peekChar
       case chr of
         '"' -> do
             _ <- pickChar
-            handleDecode (BS.concat $ reverse acc)
+            yield StringEnd
         '\\' -> do
             _ <- pickChar
             specchr <- pickChar
             nchr <- parseSpecChar specchr
-            handleString (encodeUtf8 (T.singleton nchr):acc)
+            yield $ StringContent $ encodeUtf8 (T.singleton nchr)
+            handleString
         _ -> do
-          dstr <- getWhile (\c -> c /= '"' && c /= '\\' )
-          handleString (dstr:acc)
+          (dstr, _) <- getWhile' (\c -> c /= '"' && c /= '\\' )
+          yield $ StringContent dstr
+          handleString
 
     parseSpecChar '"' = return '"'
     parseSpecChar '\\' = return '\\'

@@ -96,6 +96,12 @@ specEdge = describe "Edge cases" $ do
         res = parseLazyByteString value pmsg :: [AE.Value]
     show res `shouldBe` "[Array (fromList [Object fromList [(\"test2\",String \"123\\r\\n\\\"A\"),(\"test1\",Array (fromList [Number 1.0,Bool True,Bool False,Null,Number -35.91,Array (fromList [Number 12.0,Number 13.0])]))]])]"
 
+  it "Correct incremental parsing 2" $ do
+    let msg1 = "{\"test1\"  :[1,true,false,null,-3.591e+1,[12,13]], \"test2\":\"test2string\"}"
+        pmsg = BL.fromChunks $ map BS.singleton msg1
+        res = parseLazyByteString ("test2" .: string) pmsg :: [T.Text]
+    res `shouldBe` ["test2string"]
+
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
         res = parseByteString (arrayWithIndex 0 (objectValues (arrayOf $ pure "x")) <|> arrayWithIndex 1 (pure "y") <|> arrayOf (pure "z")) msg1 :: [String]
