@@ -76,6 +76,11 @@ import Data.Maybe (fromMaybe)
 
 import           Data.JsonStream.TokenParser
 
+
+-- | Limit for the size of an object key
+objectKeyStringLimit :: Int
+objectKeyStringLimit = 65536
+
 -- | Private parsing result
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     | Failed String
@@ -177,42 +182,49 @@ indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
 
 -- | Go through an object; if once is True, yield only first success, then ignore the rest
 object' :: Bool -> (T.Text -> Parser a) -> Parser a
-object' once valparse = Parser $ \tp ->
-  case tp of
-    PartialResult ObjectBegin ntp _ -> objcontent False (keyValue ntp)
-    PartialResult el ntp _
-      | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
-      | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
-    TokMoreData ntok _ -> MoreData (object' once valparse, ntok)
-    TokFailed _ -> Failed "Object - token failed"
+object' once valparse = Parser $ moreData object''
   where
+    object'' tok el ntok =
+      case el of
+         ObjectBegin -> objcontent False (moreData keyValue ntok)
+         ArrayEnd -> UnexpectedEnd el ntok
+         ObjectEnd -> UnexpectedEnd el ntok
+         _ -> callParse ignoreVal tok
+
     -- If we already yielded and should yield once, ignore the rest
     objcontent yielded (Done ntp)
       | once && yielded = callParse (ignoreVal' 1) ntp
-      | otherwise = objcontent yielded (keyValue ntp) -- Reset to next value
+      | otherwise = objcontent yielded (moreData keyValue ntp) -- Reset to next value
     objcontent yielded (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent yielded. np), ntok)
     objcontent _ (Yield v np) = Yield v (objcontent True np)
     objcontent _ (Failed err) = Failed err
     objcontent _ (UnexpectedEnd ObjectEnd ntp) = Done ntp
     objcontent _ (UnexpectedEnd el _) = Failed ("Object - UnexpectedEnd: " ++ show el)
 
-    keyValue (TokFailed _) = Failed "KeyValue - token failed"
-    keyValue (TokMoreData ntok _) = MoreData (Parser keyValue, ntok)
-    keyValue (PartialResult (JValue (AE.String key)) ntok _) = callParse (valparse key) ntok
-    keyValue (PartialResult (StringBegin str) ntok _) = getLongString [str] (BS.length str) ntok
-    keyValue (PartialResult el ntok _)
-      | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
-      | otherwise = Failed ("Object - unexpected token: " ++ show el)
+    keyValue _ el ntok =
+      case el of
+        JValue (AE.String key) -> callParse (valparse key) ntok
+        StringBegin str -> moreData (getLongString [str] (BS.length str)) ntok
+        _| el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntok
+         | otherwise -> Failed ("Object - unexpected token: " ++ show el)
 
-    getLongString acc !len tok =
-      case tok of
-        PartialResult StringEnd ntok _
+    getLongString acc len _ el ntok =
+      case el of
+        StringEnd
           | Right key <- decodeUtf8' (BS.concat $ reverse acc) -> callParse (valparse key) ntok
           | otherwise -> Failed "Error decoding UTF8"
-        PartialResult (StringContent str) ntok _ -> getLongString (str:acc) (len + BS.length str) ntok
-        TokMoreData ntok _ -> MoreData (Parser (getLongString acc len), ntok)
+        StringContent str
+          | len > objectKeyStringLimit -> moreData (getLongString acc len) ntok -- Ignore rest of key if over limit
+          | otherwise -> moreData (getLongString (str:acc) (len + BS.length str)) ntok
         _ -> Failed "Object longstr - unexpected token."
 
+-- | Helper function to deduplicate TokMoreData/FokFailed logic
+moreData :: (TokenResult -> Element -> TokenResult -> ParseResult v) -> TokenResult -> ParseResult v
+moreData parser tok =
+  case tok of
+    PartialResult el ntok _ -> parser tok el ntok
+    TokMoreData ntok _ -> MoreData (Parser (moreData parser), ntok)
+    TokFailed _ -> Failed "Object longstr - unexpected token."
 
 -- | Match all key-value pairs of an object, return them as a tuple.
 -- If the source object defines same key multiple times, all values
@@ -238,54 +250,49 @@ objectWithKey name valparse = object' True itemFn
 
 -- | Parses underlying values and generates a AE.Value
 aeValue :: Parser AE.Value
-aeValue = Parser value'
+aeValue = Parser $ moreData value'
   where
-    value' (TokFailed _) = Failed "Value - token failed"
-    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
-    value' (PartialResult (JValue val) ntok _) = Yield val (Done ntok)
-    value' tok@(PartialResult (StringBegin _) _ _) = callParse (AE.String <$> longString Nothing) tok
-    value' tok@(PartialResult ArrayBegin _ _) =
-        AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
-    value' tok@(PartialResult ObjectBegin _ _) =
-        AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
-    value' (PartialResult el ntok _)
-      | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
-      | otherwise = Failed ("aeValue - unexpected token: " ++ show el)
+    value' tok el ntok =
+      case el of
+        JValue val -> Yield val (Done ntok)
+        StringBegin _ -> callParse (AE.String <$> longString Nothing) tok
+        ArrayBegin -> AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
+        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
+        ArrayEnd -> UnexpectedEnd el ntok
+        ObjectEnd -> UnexpectedEnd el ntok
+        _ -> Failed ("aeValue - unexpected token: " ++ show el)
 
 -- | Convert a strict aeson value (no object/array) to a value.
 -- Non-matching type is ignored and not parsed (unlike 'value')
 jvalue :: (AE.Value -> Maybe a) -> Parser a
-jvalue convert = Parser value'
+jvalue convert = Parser (moreData value')
   where
-    value' (TokFailed _) = Failed "Value - token failed"
-    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
-    value' (PartialResult (JValue val) ntok _) =
-          case convert val of
-            Just convValue -> Yield convValue (Done ntok)
-            Nothing -> Done ntok
-    value' tp@(PartialResult el ntok _)
-      | el == ArrayEnd || el == ObjectEnd = UnexpectedEnd el ntok
-      | otherwise = callParse ignoreVal tp
+    value' tok el ntok =
+      case el of
+        JValue val
+          | Just convValue <- convert val  -> Yield convValue (Done ntok)
+          | otherwise -> Done ntok
+        ArrayEnd -> UnexpectedEnd el ntok
+        ObjectEnd -> UnexpectedEnd el ntok
+        _ -> callParse ignoreVal tok
 
 
 -- | Match a possibly bounded string roughly limited by a limit
 longString :: Maybe Int -> Parser T.Text
-longString mbounds = Parser $ handle [] 0
+longString mbounds = Parser $ moreData (handle [] 0)
   where
-    handle acc !len tp =
-      case tp of
-        PartialResult (JValue (AE.String str)) ntok _ -> Yield str (Done ntok)
-        PartialResult (StringBegin str) ntp _ -> handle [str] (BS.length str) ntp
-        PartialResult (StringContent str) ntp _
-          | (Just bounds) <- mbounds,
-            len > bounds             -> handle acc len ntp
-          | otherwise -> handle (str:acc) (len + BS.length str) ntp
-        PartialResult StringEnd ntp _
-          | Right val <- decodeUtf8' (BS.concat $ reverse acc) -> Yield val (Done ntp)
+    handle acc len tok el ntok =
+      case el of
+        JValue (AE.String str) -> Yield str (Done ntok)
+        StringBegin str -> moreData (handle [str] (BS.length str)) ntok
+        StringContent str
+          | (Just bounds) <- mbounds, len > bounds
+                          -> moreData (handle acc len) ntok -- Ignore if the string is out of bounds
+          | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
+        StringEnd
+          | Right val <- decodeUtf8' (BS.concat $ reverse acc) -> Yield val (Done ntok)
           | otherwise -> Failed "Error decoding UTF8"
-        tok@(PartialResult {}) -> callParse ignoreVal tok
-        TokMoreData ntok _ -> MoreData (Parser (handle acc len), ntok)
-        TokFailed _ -> Failed "String - token failed"
+        _ ->  callParse ignoreVal tok
 
 -- | Parse string value, skip parsing otherwise.
 string :: Parser T.Text
@@ -335,13 +342,10 @@ jNull = jvalue cvt
 
 -- | Parses a field with a possible null value. Use 'defaultValue' for missing values.
 nullable :: Parser a -> Parser (Maybe a)
-nullable valparse = Parser value'
+nullable valparse = Parser (moreData value')
   where
-    value' (TokFailed _) = Failed "Nullable - token failed"
-    value' (TokMoreData ntok _) = MoreData (Parser value', ntok)
-    value' (PartialResult (JValue AE.Null) ntok _) = Yield Nothing (Done ntok)
-    value' tok@(PartialResult {}) = callParse (Just <$> valparse) tok
-
+    value' _ (JValue AE.Null) ntok = Yield Nothing (Done ntok)
+    value' tok _ _ = callParse (Just <$> valparse) tok
 
 -- | Match 'FromJSON' value.
 value :: AE.FromJSON a => Parser a
