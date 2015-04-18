@@ -7,12 +7,13 @@ an incremental JSON parser would be very hard thing to do; it turned out to be
 remarkable easy. Just wondering, why nobody came with this earlier...
 
 > Parsing is
-> from 40% faster to ~50% slower than aeson, depending on the parser
+> from 40% faster to ~90% slower than aeson, depending on the parser
 > grammar and the test. Generally, parsing small pieces is faster with aeson, parsing
 > large structures consisting of smaller objects works better with
 > json-stream because of lower memory
 > consumption and less stress on the GC. Creating parsers for complex
-> JSON structures can be much easier using json-stream.
+> JSON structures can be much easier using json-stream. The culprit of the slow
+> performance is probably the lexer, that is the area that can probably be improved.
 >
 > Counting number of array elements in 120MB
 > JSON file (1M elements) needed 1.7GB in aeson, 1.5GB with json-stream in the aeson mode
@@ -36,7 +37,7 @@ the parser is not guaranteed to fail on bad input.**
 - The ',' and ':' characters in the lexer are treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
-- The length of an object key is limited to ~64K, records with longer keys are ignored. 
+- The length of an object key is limited to ~64K, records with longer keys are ignored.
 
 ## Motivation
 

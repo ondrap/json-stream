@@ -19,6 +19,9 @@ module Data.JsonStream.Parser (
     -- * How to use this library
     -- $use
 
+    -- * Performance
+    -- $performance
+
     -- * Constant space decoding
     -- $constant
 
@@ -430,10 +433,10 @@ toList :: Parser a -> Parser [a]
 toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
     loop acc (Done ntp) = Yield (reverse acc) (Done ntp)
+    loop acc (UnexpectedEnd el ntp) = Yield (reverse acc) (UnexpectedEnd el ntp)
     loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
     loop acc (Yield v np) = loop (v:acc) np
     loop _ (Failed err) = Failed err
-    loop _ (UnexpectedEnd el _) = Failed ("getYields - UnexpectedEnd: " ++ show el)
 
 -- | Let only items matching a condition pass
 filterI :: (a -> Bool) -> Parser a -> Parser a
@@ -601,3 +604,20 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- > >>> let people = arrayOf person
 -- > >>> parseByteString people (..JSON..)
 -- > [("test1",1),("test2",-1),("test3",-1)]
+
+-- $performance
+-- The parser tries to do the least amount of work to get the job done. The speed is limited mostly
+-- by the lexer (which is not very good). The parser itself is quite efficient in eliminating
+-- the work that does not need to be done.
+--
+-- This can become quite significant if the resulting structure contains only a subset of the data.
+-- The parser skips pieces that are not relevant. Using parsers 'string', 'integer' etc. is preferable
+-- to the FromJSON 'value'.
+--
+-- It is possible to use the '*>' operator to filter objects based on a condition, e.g.:
+--
+-- > arrayOf $ id <$> "error" .: number
+-- >               *> "name" .: string
+--
+-- This will return all objects that contain attribute error with number content. The parser will
+-- skip trying to decode the name attribute if error is not found.
