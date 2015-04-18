@@ -91,17 +91,15 @@ objectKeyStringLimit = 65536
 -- | Private parsing result
 data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     | Failed String
-                    | Done TokenResult
+                    | Done (Maybe Element) TokenResult -- ^ The element is ] or }, it is propagated down to proper arr/obj
                     | Yield v (ParseResult v)
-                    | UnexpectedEnd Element TokenResult -- Thrown on ArrayEnd and ObjectEnd
 
 
 instance Functor ParseResult where
   fmap f (MoreData (np, ntok)) = MoreData (fmap f np, ntok)
   fmap _ (Failed err) = Failed err
-  fmap _ (Done tok) = Done tok
+  fmap _ (Done el tok) = Done el tok
   fmap f (Yield v np) = Yield (f v) (fmap f np)
-  fmap _ (UnexpectedEnd el tok) = UnexpectedEnd el tok
 
 -- | A representation of the parser.
 newtype Parser a = Parser {
@@ -115,22 +113,19 @@ instance Applicative Parser where
   pure x = Parser $ \tok -> process (callParse ignoreVal tok)
     where
       process (Failed err) = Failed err
-      process (Done tok) = Yield x (Done tok)
-      process (UnexpectedEnd el tok) = UnexpectedEnd el tok
+      process (Done Nothing tok) = Yield x (Done Nothing tok)
+      process (Done (Just el) tok) = Done (Just el) tok -- This is for the end of array, we have already yielded content of it
       process (MoreData (np, ntok)) = MoreData (Parser (process . callParse np), ntok)
       process _ = Failed "Internal error in pure, ignoreVal doesn't yield"
 
   -- | Run both parsers in parallel using a shared token parser, combine results
   (<*>) m1 m2 = Parser $ \tok -> process ([], []) (callParse m1 tok) (callParse m2 tok)
     where
-      process ([], _) (Done ntok) _ = Done ntok -- Optimize, return immediately when first parser fails
-      process ([], _) (UnexpectedEnd el ntok) _ = UnexpectedEnd el ntok -- dtto
+      process ([], _) (Done el ntok) _ = Done el ntok -- Optimize, return immediately when first parser fails
       process (lst1, lst2) (Yield v np1) p2 = process (v:lst1, lst2) np1 p2
       process (lst1, lst2) p1 (Yield v np2) = process (lst1, v:lst2) p1 np2
-      process (lst1, lst2) (Done ntok) (Done _) =
-        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Done ntok)
-      process (lst1, lst2) (UnexpectedEnd el ntok) (UnexpectedEnd _ _) =
-        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (UnexpectedEnd el ntok)
+      process (lst1, lst2) (Done el ntok) (Done _ _) =
+        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Done el ntok)
       process lsts (MoreData (np1, ntok1)) (MoreData (np2, _)) =
         MoreData (Parser (\tok -> process lsts (callParse np1 tok) (callParse np2 tok)), ntok1)
       process _ (Failed err) _ = Failed err
@@ -147,8 +142,7 @@ instance Alternative Parser where
     where
       process (Yield v np1) p2 = Yield v (process np1 p2)
       process p1 (Yield v np2) = Yield v (process p1 np2)
-      process (Done ntok) (Done _) = Done ntok
-      process (UnexpectedEnd el ntok) (UnexpectedEnd _ _) = UnexpectedEnd el ntok
+      process (Done el ntok) (Done _ _) = Done el ntok
       process (MoreData (np1, ntok)) (MoreData (np2, _)) =
           MoreData (Parser $ \tok -> process (callParse np1 tok) (callParse np2 tok), ntok)
       process (Failed err) _ = Failed err
@@ -160,17 +154,17 @@ array' valparse = Parser $ \tp ->
   case tp of
     (PartialResult ArrayBegin ntp _) -> arrcontent 0 (callParse (valparse 0) ntp)
     (PartialResult el ntp _)
-      | el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntp
+      | el == ArrayEnd || el == ObjectEnd -> Done (Just el) ntp
       | otherwise -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok _) -> MoreData (array' valparse, ntok)
     (TokFailed _) -> Failed "Array - token failed"
   where
-    arrcontent i (Done ntp) = arrcontent (i+1) (callParse (valparse (i + 1)) ntp) -- Reset to next value
+    arrcontent i (Done Nothing ntp) = arrcontent (i+1) (callParse (valparse (i + 1)) ntp) -- Reset to next value
     arrcontent i (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent i . np), ntp)
     arrcontent i (Yield v np) = Yield v (arrcontent i np)
     arrcontent _ (Failed err) = Failed err
-    arrcontent _ (UnexpectedEnd ArrayEnd ntp) = Done ntp
-    arrcontent _ (UnexpectedEnd el _) = Failed ("Array - UnexpectedEnd: " ++ show el)
+    arrcontent _ (Done (Just ArrayEnd) ntp) = Done Nothing ntp
+    arrcontent _ (Done (Just el) _) = Failed ("Array - UnexpectedEnd: " ++ show el)
 
 -- | Match all items of an array.
 arrayOf :: Parser a -> Parser a
@@ -196,25 +190,25 @@ object' once valparse = Parser $ moreData object''
     object'' tok el ntok =
       case el of
          ObjectBegin -> objcontent False (moreData keyValue ntok)
-         ArrayEnd -> UnexpectedEnd el ntok
-         ObjectEnd -> UnexpectedEnd el ntok
+         ArrayEnd -> Done (Just el) ntok
+         ObjectEnd -> Done (Just el) ntok
          _ -> callParse ignoreVal tok
 
     -- If we already yielded and should yield once, ignore the rest of the object
-    objcontent yielded (Done ntp)
+    objcontent yielded (Done Nothing ntp)
       | once && yielded = callParse (ignoreVal' 1) ntp
       | otherwise = objcontent yielded (moreData keyValue ntp) -- Reset to next value
     objcontent yielded (MoreData (Parser np, ntok)) = MoreData (Parser (objcontent yielded. np), ntok)
     objcontent _ (Yield v np) = Yield v (objcontent True np)
     objcontent _ (Failed err) = Failed err
-    objcontent _ (UnexpectedEnd ObjectEnd ntp) = Done ntp
-    objcontent _ (UnexpectedEnd el _) = Failed ("Object - UnexpectedEnd: " ++ show el)
+    objcontent _ (Done (Just ObjectEnd) ntp) = Done Nothing ntp
+    objcontent _ (Done (Just el) _) = Failed ("Object - UnexpectedEnd: " ++ show el)
 
     keyValue _ el ntok =
       case el of
         JValue (AE.String key) -> callParse (valparse key) ntok
         StringBegin str -> moreData (getLongKey [str] (BS.length str)) ntok
-        _| el == ArrayEnd || el == ObjectEnd -> UnexpectedEnd el ntok
+        _| el == ArrayEnd || el == ObjectEnd -> Done (Just el) ntok
          | otherwise -> Failed ("Object - unexpected token: " ++ show el)
 
     getLongKey acc len _ el ntok =
@@ -264,12 +258,12 @@ aeValue = Parser $ moreData value'
   where
     value' tok el ntok =
       case el of
-        JValue val -> Yield val (Done ntok)
+        JValue val -> Yield val (Done Nothing ntok)
         StringBegin _ -> callParse (AE.String <$> longString Nothing) tok
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
         ObjectBegin -> AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
-        ArrayEnd -> UnexpectedEnd el ntok
-        ObjectEnd -> UnexpectedEnd el ntok
+        ArrayEnd -> Done (Just el) ntok
+        ObjectEnd -> Done (Just el) ntok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
 
 -- | Convert a strict aeson value (no object/array) to a value.
@@ -280,10 +274,10 @@ jvalue convert = Parser (moreData value')
     value' tok el ntok =
       case el of
         JValue val
-          | Just convValue <- convert val  -> Yield convValue (Done ntok)
-          | otherwise -> Done ntok
-        ArrayEnd -> UnexpectedEnd el ntok
-        ObjectEnd -> UnexpectedEnd el ntok
+          | Just convValue <- convert val  -> Yield convValue (Done Nothing ntok)
+          | otherwise -> Done Nothing ntok
+        ArrayEnd -> Done (Just el) ntok
+        ObjectEnd -> Done (Just el) ntok
         _ -> callParse ignoreVal tok
 
 
@@ -293,7 +287,7 @@ longString mbounds = Parser $ moreData (handle [] 0)
   where
     handle acc len tok el ntok =
       case el of
-        JValue (AE.String str) -> Yield str (Done ntok)
+        JValue (AE.String str) -> Yield str (Done Nothing ntok)
         StringBegin str -> moreData (handle [str] (BS.length str)) ntok
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
@@ -301,7 +295,7 @@ longString mbounds = Parser $ moreData (handle [] 0)
           | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
         StringEnd
           | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc)
-                      -> Yield (T.concat $ TL.toChunks val) (Done ntok)
+                      -> Yield (T.concat $ TL.toChunks val) (Done Nothing ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
@@ -311,10 +305,10 @@ bytestring = Parser $ moreData (handle [])
   where
     handle acc tok el ntok =
       case el of
-        JValue (AE.String str) -> Yield (BL.fromChunks [encodeUtf8 str]) (Done ntok)
+        JValue (AE.String str) -> Yield (BL.fromChunks [encodeUtf8 str]) (Done Nothing ntok)
         StringBegin str -> moreData (handle [str]) ntok
         StringContent str -> moreData (handle (str:acc)) ntok
-        StringEnd -> Yield (BL.fromChunks $ reverse acc) (Done ntok)
+        StringEnd -> Yield (BL.fromChunks $ reverse acc) (Done Nothing ntok)
         _ -> callParse ignoreVal tok
 
 
@@ -367,16 +361,15 @@ jNull = jvalue cvt
 nullable :: Parser a -> Parser (Maybe a)
 nullable valparse = Parser (moreData value')
   where
-    value' _ (JValue AE.Null) ntok = Yield Nothing (Done ntok)
+    value' _ (JValue AE.Null) ntok = Yield Nothing (Done Nothing ntok)
     value' tok _ _ = callParse (Just <$> valparse) tok
 
 -- | Match 'FromJSON' value.
 value :: AE.FromJSON a => Parser a
 value = Parser $ \ntok -> loop (callParse aeValue ntok)
   where
-    loop (Done ntp) = Done ntp
+    loop (Done el ntp) = Done el ntp
     loop (Failed err) = Failed err
-    loop (UnexpectedEnd el b) = UnexpectedEnd el b
     loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
     loop (Yield v np) =
       case AE.fromJSON v of
@@ -387,9 +380,8 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
 takeI :: Int -> Parser a -> Parser a
 takeI num valparse = Parser $ \tok -> loop num (callParse valparse tok)
   where
-    loop _ (Done ntp) = Done ntp
+    loop _ (Done el ntp) = Done el ntp
     loop _ (Failed err) = Failed err
-    loop _ (UnexpectedEnd el b) = UnexpectedEnd el b
     loop n (MoreData (Parser np, ntok)) = MoreData (Parser (loop n . np), ntok)
     loop 0 (Yield _ np) = loop 0 np
     loop n (Yield v np) = Yield v (loop (n-1) np)
@@ -413,11 +405,11 @@ ignoreVal' :: Int -> Parser a
 ignoreVal' stval = Parser $ moreData (handleTok stval)
   where
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
-    handleTok 0 _ (JValue _) ntok = Done ntok
+    handleTok 0 _ (JValue _) ntok = Done Nothing ntok
     handleTok 0 _ elm ntok
-      | elm == ArrayEnd || elm == ObjectEnd = UnexpectedEnd elm ntok
+      | elm == ArrayEnd || elm == ObjectEnd = Done (Just elm) ntok
     handleTok 1 _ elm ntok
-      | elm == ArrayEnd || elm == ObjectEnd || elm == StringEnd = Done ntok
+      | elm == ArrayEnd || elm == ObjectEnd || elm == StringEnd = Done Nothing ntok
     handleTok level _ el ntok =
       case el of
         JValue _ -> moreData (handleTok level) ntok
@@ -432,8 +424,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
 toList :: Parser a -> Parser [a]
 toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
-    loop acc (Done ntp) = Yield (reverse acc) (Done ntp)
-    loop acc (UnexpectedEnd el ntp) = Yield (reverse acc) (UnexpectedEnd el ntp)
+    loop acc (Done el ntp) = Yield (reverse acc) (Done el ntp)
     loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
     loop acc (Yield v np) = loop (v:acc) np
     loop _ (Failed err) = Failed err
@@ -442,9 +433,8 @@ toList f = Parser $ \ntok -> loop [] (callParse f ntok)
 filterI :: (a -> Bool) -> Parser a -> Parser a
 filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
   where
-    loop (Done ntp) = Done ntp
+    loop (Done el ntp) = Done el ntp
     loop (Failed err) = Failed err
-    loop (UnexpectedEnd el b) = UnexpectedEnd el b
     loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
     loop (Yield v np)
       | cond v = Yield v (loop np)
@@ -454,10 +444,9 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
 defaultValue :: a -> Parser a -> Parser a
 defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valparse ntok)
   where
-    loop True (Done ntp) = Done ntp
-    loop False (Done ntp) = Yield defvalue (Done ntp)
+    loop False (Done Nothing ntp) = Yield defvalue (Done Nothing ntp)
+    loop _ (Done el ntp) = Done el ntp
     loop _ (Failed err) = Failed err
-    loop _ (UnexpectedEnd el b) = UnexpectedEnd el b
     loop found (MoreData (Parser np, ntok)) = MoreData (Parser (loop found . np), ntok)
     loop _ (Yield v np) = Yield v (loop True np)
 
@@ -502,11 +491,11 @@ runParser' parser startdata = parse $ callParse parser (tokenParser startdata)
   where
     parse (MoreData (np, ntok)) = ParseNeedData (parse . callParse np .ntok)
     parse (Failed err) = ParseFailed err
-    parse (UnexpectedEnd el _) = ParseFailed $ "UnexpectedEnd item: " ++ show el
     parse (Yield v np) = ParseYield v (parse np)
-    parse (Done (PartialResult _ _ rest)) = ParseDone rest
-    parse (Done (TokFailed rest)) = ParseDone rest
-    parse (Done (TokMoreData _ rest)) = ParseDone rest
+    parse (Done Nothing (PartialResult _ _ rest)) = ParseDone rest
+    parse (Done Nothing (TokFailed rest)) = ParseDone rest
+    parse (Done Nothing (TokMoreData _ rest)) = ParseDone rest
+    parse (Done (Just el) _) = ParseFailed $ "UnexpectedEnd item: " ++ show el
 
 -- | Run streaming parser, immediately returns 'ParseNeedData'.
 runParser :: Parser a -> ParseOutput a
