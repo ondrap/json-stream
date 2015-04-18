@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 enum states {
   STATE_BASE = 0,
@@ -28,7 +32,7 @@ enum restype {
   RES_STRING_PARTIAL,
 };
 
-#define RESULT_COUNT 1
+#define RESULT_COUNT 10000
 #define MAX_NUMBER 64
 
 struct lexer_result {
@@ -310,6 +314,8 @@ int test(char *input) {
 
       int res = lexit(input, &lexer);
       printf("Result: %d\n", res);
+      if (res == LEX_ERROR)
+        break;
       printf("Count of results: %d\n", lexer.result_num);
       for (int i=0; i < lexer.result_num; i++) {
         struct lexer_result *res = &lexer.result[i];
@@ -325,6 +331,40 @@ int test(char *input) {
   return 0;
 }
 
+void speedtest(int fd)
+{
+    int counter = 0;
+    const int bufsize = 32768;
+    char buffer[bufsize];
+    struct lexer lexer;
+
+    lexer.current_state = STATE_BASE;
+    while (1) {
+        int size = read(fd, buffer, bufsize);
+        if (!size)
+            break;
+        lexer.position = 0;
+        lexer.length = size;
+        while (lexer.position < lexer.length) {
+          lexer.result_num = 0;
+          int res = lexit(buffer, &lexer);
+          if (res) {
+            printf("Error\n");
+            return;
+          }
+          counter += lexer.result_num;
+          // printf("%d\n", counter);
+        }
+    }
+    printf("Total: %d\n", counter);
+}
+
 int main(void) {
-  test(test1);
+  // test(test2);
+  int fd = open("test.json", O_RDONLY);
+  if (fd == -1) {
+    perror("File");
+    return 0;
+  }
+  speedtest(fd);
 }
