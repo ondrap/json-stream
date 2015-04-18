@@ -9,7 +9,8 @@ description:         Easy to use JSON parser fully supporting incremental parsin
                      monadic parsing when appropriate.
 
                      The parser supports incremental parsing while using as little
-                     memory as possible with performance comparable to aeson.
+                     memory as possible with performance comparable to aeson. Fully
+                     constant space parsing is possible.
 
 homepage:            https://github.com/ondrap/json-stream
 license:             BSD3
@@ -33,7 +34,6 @@ library
                        , aeson
                        , vector
                        , unordered-containers
-                       , hspec
                        , scientific
   default-language:    Haskell2010
 

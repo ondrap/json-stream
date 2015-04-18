@@ -104,7 +104,7 @@ specEdge = describe "Edge cases" $ do
 
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
-        res = parseByteString (arrayWithIndex 0 (objectValues (arrayOf $ pure "x")) <|> arrayWithIndex 1 (pure "y") <|> arrayOf (pure "z")) msg1 :: [String]
+        res = parseByteString (arrayWithIndexOf 0 (objectValues (arrayOf $ pure "x")) <|> arrayWithIndexOf 1 (pure "y") <|> arrayOf (pure "z")) msg1 :: [String]
     res `shouldBe` ["x", "x", "x", "y", "z", "z"]
 
   it "Correctly returns unparsed data 1" $ do

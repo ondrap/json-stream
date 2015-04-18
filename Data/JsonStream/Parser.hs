@@ -37,7 +37,7 @@ module Data.JsonStream.Parser (
   , value
   , string
     -- * Constant space parsers
-  , boundedString
+  , safeString
   , number
   , integer
   , real
@@ -47,13 +47,14 @@ module Data.JsonStream.Parser (
   , (.:)
   , (.:?)
   , (.!=)
+  , (.!)
     -- * Structure parsers
   , objectWithKey
   , objectItems
   , objectValues
   , arrayOf
-  , arrayWithIndex
-  , indexedArray
+  , arrayWithIndexOf
+  , indexedArrayOf
   , nullable
     -- * Parsing modifiers
   , defaultValue
@@ -167,17 +168,17 @@ array' valparse = Parser $ \tp ->
 arrayOf :: Parser a -> Parser a
 arrayOf valparse = array' (const valparse)
 
--- | Match n'th item of an array.
-arrayWithIndex :: Int -> Parser a -> Parser a
-arrayWithIndex idx valparse = array' itemFn
+-- | Match nith item in an array.
+arrayWithIndexOf :: Int -> Parser a -> Parser a
+arrayWithIndexOf idx valparse = array' itemFn
   where
     itemFn aidx
       | aidx == idx = valparse
       | otherwise = ignoreVal
 
 -- | Match all items of an array, add index to output.
-indexedArray :: Parser a -> Parser (Int, a)
-indexedArray valparse = array' (\(!key) -> (key,) <$> valparse)
+indexedArrayOf :: Parser a -> Parser (Int, a)
+indexedArrayOf valparse = array' (\(!key) -> (key,) <$> valparse)
 
 
 -- | Go through an object; if once is True, yield only first success, then ignore the rest
@@ -299,10 +300,10 @@ string :: Parser T.Text
 string = longString Nothing
 
 -- | Stops parsing string after the limit is reached. The returned
--- string will be longer  than specified limit, but new chunks will
--- not be added to the string.
-boundedString :: Int -> Parser T.Text
-boundedString limit = longString (Just limit)
+-- string will be longer (up to a chunk size) than specified limit. New chunks will
+-- not be added to the string once the limit is reached.
+safeString :: Int -> Parser T.Text
+safeString limit = longString (Just limit)
 
 -- | Parse number, return in scientific format.
 number :: Parser Scientific
@@ -376,28 +377,25 @@ ignoreVal :: Parser a
 ignoreVal = ignoreVal' 0
 
 ignoreVal' :: Int -> Parser a
-ignoreVal' stval = Parser $ handleTok stval
+ignoreVal' stval = Parser $ moreData (handleTok stval)
   where
-    handleTok :: Int -> TokenResult -> ParseResult a
-    handleTok _ (TokFailed _) = Failed "Token error"
-    handleTok level (TokMoreData ntok _) = MoreData (Parser (handleTok level), ntok)
-
-    handleTok 0 (PartialResult (JValue _) ntok _) = Done ntok
-    handleTok 0 (PartialResult elm ntok _)
+    handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
+    handleTok 0 _ (JValue _) ntok = Done ntok
+    handleTok 0 _ elm ntok
       | elm == ArrayEnd || elm == ObjectEnd = UnexpectedEnd elm ntok
-    handleTok level (PartialResult (JValue _) ntok _) = handleTok level ntok
-
-    handleTok 1 (PartialResult elm ntok _)
+    handleTok 1 _ elm ntok
       | elm == ArrayEnd || elm == ObjectEnd || elm == StringEnd = Done ntok
-    handleTok level (PartialResult elm ntok _)
-      | elm == ArrayBegin || elm == ObjectBegin = handleTok (level + 1) ntok
-      | elm == ArrayEnd || elm == ObjectEnd = handleTok (level - 1) ntok
-    handleTok level (PartialResult (StringBegin _) ntok _) = handleTok (level + 1) ntok
-    handleTok level (PartialResult StringEnd ntok _) = handleTok (level - 1) ntok
-    handleTok level (PartialResult (StringContent _) ntok _) = handleTok level ntok
-    handleTok _ _ = Failed "UnexpectedEnd "
+    handleTok level _ el ntok =
+      case el of
+        JValue _ -> moreData (handleTok level) ntok
+        StringBegin _ -> moreData (handleTok (level + 1)) ntok
+        StringEnd -> moreData (handleTok (level - 1)) ntok
+        StringContent _ -> moreData (handleTok level) ntok
+        _| el == ArrayBegin || el == ObjectBegin -> moreData (handleTok (level + 1)) ntok
+         | el == ArrayEnd || el == ObjectEnd -> moreData (handleTok (level - 1)) ntok
+         | otherwise -> Failed "UnexpectedEnd "
 
--- | Fetch yields of a function and return them as list.
+-- | Gather matches and return them as list.
 toList :: Parser a -> Parser [a]
 toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
@@ -432,7 +430,7 @@ defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valpars
 
 --- Convenience operators
 
--- | Synonym to 'objectWithKey'.
+-- | Synonym for 'objectWithKey'. Matches key in an object.
 (.:) :: T.Text -> Parser a -> Parser a
 (.:) = objectWithKey
 
@@ -447,6 +445,12 @@ key .:? val = defaultValue Nothing (key .: nullable val)
 -- > nullval .!= defval = fromMaybe defval <$> nullval
 (.!=) :: Parser (Maybe a) -> a -> Parser a
 nullval .!= defval = fromMaybe defval <$> nullval
+
+
+-- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
+(.!) :: Int -> Parser a -> Parser a
+(.!) = arrayWithIndexOf
+
 ---
 
 -- | Result of parsing. Contains continuations to continue parsing.
@@ -500,53 +504,54 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- identical to the aeson decode function; the parsing process can generate more
 -- objects, therefore the results is [a].
 --
--- json-stream style parsing would rather look like this:
+-- Example of json-stream style parsing:
 --
--- > >>> parseByteString (array integer) "[1,2,3]" :: [Int]
+-- > >>> parseByteString (arrayOf integer) "[1,2,3]" :: [Int]
 -- > [1,2,3]
 --
--- Parsers can be combinated using  '<*>' and '<|>' operators. These operators cause
--- parallel parsing and yield some combination of the parsed values.
+-- Parsers can be combinated using  '<*>' and '<|>' operators. The parsers are
+-- run in parallel and return combinations of the parsed values.
 --
 -- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
--- > >>> let parser = array $ (,) <$> "name" .: string
--- >                              <*> "age"  .: integer
+-- > >>> let parser = arrayOf $ (,) <$> "name" .: string
+-- >                                <*> "age"  .: integer
 -- > >>> parseByteString  parser text :: [(Text,Int)]
 -- > [("John",20),("Frank",30)]
 --
--- When parsing larger values, it is advisable to use lazy ByteStrings as the chunking
--- of the ByteStrings causes the parsing to continue more efficently because less state
--- is needed to be held in memory with parallel parsers.
+-- When parsing larger values, it is advisable to use lazy ByteStrings. The parsing
+-- is then more memory efficient as less lexical state
+-- is needed to be held in memory for parallel parsers.
 --
 -- More examples are available on <https://github.com/ondrap/json-stream>.
 
 
 -- $constant
 -- Constant space decoding is possible if the grammar does not specify non-constant
--- operation. The non-constant operations are 'value', 'string', 'toList' and in some instances
--- '<*>' (and currently object accessors as the key size is not limited).
+-- operations. The non-constant operations are 'value', 'string', 'toList' and in some instances
+-- '<*>'.
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
 -- 'parseJSON' method. The AST can consume a lot of memory before it is rejected
--- in 'parseJSON'. To achieve constant space the parsers 'boundedString', 'number', 'integer',
+-- in 'parseJSON'. To achieve constant space the parsers 'safeString', 'number', 'integer',
 -- 'real' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
--- type. (Currently the object keys are not bounded, although it is quite easy to add,
--- if you are interested, let me know).
+-- type.
+--
+-- The object key length is limited to ~64K. Longer keys will be silently truncated.
 --
 -- The 'toList' parser works by accumulating all obtained values. Obviously, number
 -- of such values influences the amount of used memory.
 --
 -- The '<*>' operator runs both parsers in parallel and when they are both done, it
 -- produces combinations of the received values. It is constant-space as long as the
--- child parsers produce constant number of values. This can be achieved by using
--- 'arrayWithIndex' and 'objectWithKey' functions combined with constant space
+-- number of element produced by child parsers is limited by a constant. This can be achieved by using
+-- '.!' and '.:' functions combined with constant space
 -- parsers or limiting the number of returned elements with 'takeI'.
 --
 -- If the source object contains an object with multiple keys with a same name,
 -- json-stream considers and matches the key multiple times. The only exception
--- is 'objectWithKey' ('.:' and '.:?') that switch to ignore parser as soon as
--- a value is returned.
+-- is 'objectWithKey' ('.:' and '.:?') that return at most one value even when
+-- it is occurs multiple times.
 
 -- $aeson
 -- The parser uses internally "Data.Aeson" types, so that the FromJSON instances are
@@ -558,7 +563,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- but in a slightly different albeit more natural way.
 --
 -- > -- JSON: [{"name": "test1", "value": 1}, {"name": "test2", "value": null}, {"name": "test3"}]
--- > >>> let parser = arrayOf $ (,) <$> "name" .: string
--- > >>>                            <*> "value" .:? integer .!= (-1)
--- > >>> parseByteString parser (..JSON..)
+-- > >>> let person = (,) <$> "name" .: string
+-- > >>>                  <*> "value" .:? integer .!= (-1)
+-- > >>> let people = arrayOf person
+-- > >>> parseByteString people (..JSON..)
 -- > [("test1",1),("test2",-1),("test3",-1)]

@@ -77,7 +77,9 @@ bulkItemError = objectValues $
 If the matching grammar follows certain rules and the input chunks have limited size,
 the parsing should run in constant space. If you have a large JSON structure but need
 only small pieces, the parsing can be very fast - when the data does not match what
-is expected, it is parsed only by the lexical parser and ignored.
+is expected, it is parsed only by the lexical parser and ignored. The object key
+length is limited to 64K, maximum length of a string can be limited with `safeString`
+parser.
 
 ## Examples
 
