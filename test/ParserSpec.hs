@@ -10,6 +10,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 import Control.Monad (forM_)
+import Data.Text.Encoding (encodeUtf8)
 
 import Data.JsonStream.Parser
 import Data.JsonStream.TokenParser
@@ -101,6 +102,13 @@ specEdge = describe "Edge cases" $ do
         pmsg = BL.fromChunks $ map BS.singleton msg1
         res = parseLazyByteString ("test2" .: string) pmsg :: [T.Text]
     res `shouldBe` ["test2string"]
+
+  it "Correct incremental parsing 3" $ do
+    let msg1 = "[\"Žluťoučký kůň\"]" :: T.Text
+        pmsg = BL.fromChunks $ map BS.singleton $ BS.unpack $ encodeUtf8 msg1
+        res = parseLazyByteString (0 .! string) pmsg :: [T.Text]
+    res `shouldBe` ["Žluťoučký kůň"]
+
 
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"

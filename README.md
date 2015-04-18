@@ -61,7 +61,7 @@ and the value is *false*. If the value is *true*, we want the parser to return a
 ```haskell
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
-resultParser =    (const [] <$> filterI not ("errors" .: value))
+resultParser =    const [] <$> filterI not ("errors" .: value)
               <|> toList ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)

@@ -71,7 +71,8 @@ import qualified Data.HashMap.Strict         as HMap
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
-import Data.Text.Encoding (decodeUtf8')
+import qualified Data.Text.Lazy              as TL
+import Data.Text.Lazy.Encoding (decodeUtf8')
 import qualified Data.Vector                 as Vec
 import Data.Maybe (fromMaybe)
 
@@ -212,7 +213,8 @@ object' once valparse = Parser $ moreData object''
     getLongString acc len _ el ntok =
       case el of
         StringEnd
-          | Right key <- decodeUtf8' (BS.concat $ reverse acc) -> callParse (valparse key) ntok
+          | Right key <- decodeUtf8' (BL.fromChunks $ reverse acc) ->
+              callParse (valparse $ T.concat $ TL.toChunks key) ntok
           | otherwise -> Failed "Error decoding UTF8"
         StringContent str
           | len > objectKeyStringLimit -> moreData (getLongString acc len) ntok -- Ignore rest of key if over limit
@@ -291,7 +293,7 @@ longString mbounds = Parser $ moreData (handle [] 0)
                           -> moreData (handle acc len) ntok -- Ignore if the string is out of bounds
           | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
         StringEnd
-          | Right val <- decodeUtf8' (BS.concat $ reverse acc) -> Yield val (Done ntok)
+          | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc) -> Yield (T.concat $ TL.toChunks val) (Done ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
