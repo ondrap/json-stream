@@ -299,7 +299,8 @@ longString mbounds = Parser $ moreData (handle [] 0)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
--- | Match string as a ByteString without decoding the data to UTF8 (large strings, small get always decoded).
+-- | Match string as a ByteString without decoding the data from UTF8 (strings larger than input chunk,
+-- small get always decoded).
 bytestring :: Parser BL.ByteString
 bytestring = Parser $ moreData (handle [])
   where
