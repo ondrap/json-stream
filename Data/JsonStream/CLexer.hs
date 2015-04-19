@@ -65,10 +65,14 @@ instance Storable Result where
   alignment _ = sizeOf (undefined :: CInt)
   peek ptr = do
     rtype <- peekByteOff ptr 0
-    rpos <- peekByteOff ptr (sizeOf rtype)
-    rlen <- peekByteOff ptr (2 * sizeOf rtype)
-    rdata <- peekByteOff ptr (3 * sizeOf rtype)
-    return $ Result rtype rpos rlen rdata
+    if rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket
+      then
+        return $ Result rtype 0 0 0
+      else do
+        rpos <- peekByteOff ptr (sizeOf rtype)
+        rlen <- peekByteOff ptr (2 * sizeOf rtype)
+        rdata <- peekByteOff ptr (3 * sizeOf rtype)
+        return $ Result rtype rpos rlen rdata
   poke _ _ = undefined
 
 foreign import ccall "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr Result -> IO CInt
