@@ -97,21 +97,62 @@ int handle_number(const char *input, struct lexer *lexer)
   /* Just eat characters that can be numbers and feed them to a table */
   // Copy the character to buffer
   int startposition = lexer->position;
-  for (;lexer->position < lexer->length && isJnumber(input[lexer->position]);++lexer->position)
-       ;
+
+  // Try to compute the number fitting to int - 32-bit=9, 64-bit=18
+  int maxdigits = sizeof(int) == 8 ? 18 : 9;
+  int computedNumber = 0;
+  int digits = 0;
+  int gotDot = 0;
+  int dotDigits = 0;
+  int invalid = 0;
+  int sign = 1;
+
+  // Do not try on number continuation
+  if (lexer->state_data)
+      invalid = 1;
+
+  for (;lexer->position < lexer->length && isJnumber(input[lexer->position]);++lexer->position) {
+       char ch = input[lexer->position];
+       if (!invalid) {
+         if (lexer->position == startposition && ch == '-') {
+            sign = -1;
+         } else if (isdigit(ch)) {
+           digits++;
+           computedNumber = computedNumber * 10 + (ch - '0');
+           if (gotDot)
+              dotDigits++;
+         } else if (ch == '.' && gotDot == 0) {
+            gotDot = 1;
+         } else
+            invalid = 1; // We do not support E notation to optimize or some syntax error
+
+         if (digits > maxdigits)
+            invalid = 1;
+        }
+     }
 
   struct lexer_result *res = &lexer->result[lexer->result_num];
   res->adddata = lexer->state_data;
   if (lexer->position == lexer->length) {
     res->restype = RES_NUMBER_PARTIAL;
+    // We can just point directly to the input
+    res->startpos = startposition;
+    res->length = lexer->position - startposition;
     lexer->state_data = 1;
+  } else if (!invalid) {
+    res->restype = RES_NUMBER_SMALL;
+    res->adddata = sign * computedNumber;
+    res->length = dotDigits;
+
+    lexer->current_state = STATE_BASE;
   } else {
     res->restype = RES_NUMBER;
+    // We can just point directly to the input
+    res->startpos = startposition;
+    res->length = lexer->position - startposition;
+
     lexer->current_state = STATE_BASE;
   }
-  // We can just point directly to the input
-  res->startpos = startposition;
-  res->length = lexer->position - startposition;
 
   lexer->result_num++;
   return LEX_OK;

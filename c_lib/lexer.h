@@ -15,6 +15,7 @@
 #define RES_STRING_PARTIAL 9 /* Add-data: 0 - first part, 1 - other parts */
 #define RES_NUMBER_PARTIAL 10 /* Add-data: 0 - first part, 1 - other parts */
 #define RES_STRING_UNI     11
+#define RES_NUMBER_SMALL   12
 
 #define RESULT_COUNT 10000
 

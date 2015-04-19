@@ -166,6 +166,14 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
         -- ObjectEnd and ArrayEnd need pointer to data that wasn't parsed
         | resType == resCloseBrace -> PartialResult (ObjectEnd context) (parse rest)
         | resType == resCloseBracket -> PartialResult (ArrayEnd context) (parse rest)
+        -- Number optimized - integer
+        | resType == resNumberSmall && resLength == 0 ->
+              PartialResult (JInteger $ fromIntegral resAddData) (parse rest)
+        -- Number optimized - floating
+        | resType == resNumberSmall ->
+              PartialResult
+                (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * fromIntegral resLength)))
+                (parse rest)
         -- Number single
         | resType == resNumber && resAddData == 0 ->
             case parseNumber textSection of
@@ -210,14 +218,3 @@ tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = getNextResult (TempData dta newhdr False [])
   where
     newhdr = Header 0 0 0 0 (fromIntegral $ BS.length dta) 0
-
--- testTokens :: [BS.ByteString] -> TokenResult -> IO ()
--- testTokens [] (TokMoreData _ ctx) = putStrLn $ "End of data, rest: " ++ (show ctx)
--- testTokens _ (TokFailed ctx) = putStrLn $ "Token failed, rest: " ++ (show ctx)
--- testTokens (dta:rest) (TokMoreData np ctx) = do
---     putStrLn $ "More data, rest: " ++ show ctx
---     testTokens rest (np dta)
--- testTokens dta (PartialResult el np ctx) = do
---     putStrLn $ "Got token " ++ show el ++ ", rest: " ++ show ctx
---     testTokens dta np
---

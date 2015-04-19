@@ -10,7 +10,7 @@ import qualified Data.ByteString.Char8 as BS
 
 data Element = ArrayBegin | ArrayEnd BS.ByteString | ObjectBegin | ObjectEnd BS.ByteString
                | StringContent BS.ByteString | StringEnd
-               | JValue AE.Value
+               | JValue AE.Value | JInteger Int
                deriving (Show, Eq)
 
 -- | Public interface for parsing JSON tokens.

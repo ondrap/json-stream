@@ -266,6 +266,7 @@ aeValue = Parser $ moreData value'
     value' tok el ntok =
       case el of
         JValue val -> Yield val (Done Nothing "" ntok)
+        JInteger val -> Yield (AE.Number $ fromIntegral val) (Done Nothing "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
         ObjectBegin -> AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
@@ -275,13 +276,16 @@ aeValue = Parser $ moreData value'
 
 -- | Convert a strict aeson value (no object/array) to a value.
 -- Non-matching type is ignored and not parsed (unlike 'value')
-jvalue :: (AE.Value -> Maybe a) -> Parser a
-jvalue convert = Parser (moreData value')
+jvalue :: (AE.Value -> Maybe a) -> (Int -> Maybe a) -> Parser a
+jvalue convert cvtint = Parser (moreData value')
   where
     value' tok el ntok =
       case el of
         JValue val
           | Just convValue <- convert val  -> Yield convValue (Done Nothing "" ntok)
+          | otherwise -> Done Nothing "" ntok
+        JInteger val
+          | Just convValue <- cvtint val -> Yield convValue (Done Nothing "" ntok)
           | otherwise -> Done Nothing "" ntok
         ArrayEnd ctx -> Done (Just el) ctx ntok
         ObjectEnd ctx -> Done (Just el) ctx ntok
@@ -329,14 +333,14 @@ safeString limit = longString (Just limit)
 
 -- | Parse number, return in scientific format.
 number :: Parser Scientific
-number = jvalue cvt
+number = jvalue cvt (Just . fromIntegral)
   where
     cvt (AE.Number num) = Just num
     cvt _ = Nothing
 
 -- | Parse to integer type.
 integer :: (Integral i, Bounded i) => Parser i
-integer = jvalue cvt
+integer = jvalue cvt (Just . fromIntegral)
   where
     cvt (AE.Number num)
       | isInteger num = toBoundedInteger num
@@ -344,21 +348,21 @@ integer = jvalue cvt
 
 -- | Parse to float/double.
 real :: RealFloat a => Parser a
-real = jvalue cvt
+real = jvalue cvt (Just . fromIntegral)
   where
     cvt (AE.Number num) = Just $ toRealFloat num
     cvt _ = Nothing
 
 -- | Parse bool, skip if the type is not bool.
 bool :: Parser Bool
-bool = jvalue cvt
+bool = jvalue cvt (const Nothing)
   where
     cvt (AE.Bool b) = Just b
     cvt _ = Nothing
 
 -- | Match a null value.
 jNull :: Parser ()
-jNull = jvalue cvt
+jNull = jvalue cvt (const Nothing)
   where
     cvt (AE.Null) = Just ()
     cvt _ = Nothing
@@ -412,6 +416,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
   where
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done Nothing "" ntok
+    handleTok 0 _ (JInteger _) ntok = Done Nothing "" ntok
     handleTok 0 _ el@(ArrayEnd ctx) ntok = Done (Just el) ctx ntok
     handleTok 0 _ el@(ObjectEnd ctx) ntok = Done (Just el) ctx ntok
     handleTok 1 _ (ArrayEnd ctx) ntok = Done Nothing ctx ntok
@@ -419,6 +424,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
     handleTok level _ el ntok =
       case el of
         JValue _ -> moreData (handleTok level) ntok
+        JInteger _ -> moreData (handleTok level) ntok
         StringContent _ -> moreData (handleTok (setBit level 30)) ntok
         StringEnd -> moreData (handleTok (clearBit level 30)) ntok -- The 30s bit indicates that we are in string
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok

@@ -26,4 +26,5 @@ resultLimit       =  #const RESULT_COUNT
   , resStringPartial = RES_STRING_PARTIAL
   , resStringUni = RES_STRING_UNI
   , resNumberPartial = RES_NUMBER_PARTIAL
+  , resNumberSmall = RES_NUMBER_SMALL
   }

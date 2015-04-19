@@ -24,21 +24,6 @@ source-repository head
   type: git
   location: https://github.com/ondrap/json-stream.git
 
-executable spdtest
-  main-is: spdtest.hs
-  other-modules:       Data.JsonStream.TokenParser, Data.JsonStream.CLexType, Data.JsonStream.CLexer
-  ghc-options:         -O2 -Wall -fprof-auto
-  c-sources:           c_lib/lexer.c
-  include-dirs:        c_lib
-  default-language:    Haskell2010
-  build-depends:         base >=4.7 && <4.8
-                       , bytestring
-                       , text
-                       , aeson
-                       , vector
-                       , unordered-containers
-                       , scientific
-
 
 library
   exposed-modules:     Data.JsonStream.Parser
@@ -71,3 +56,18 @@ test-suite spec
                        , unordered-containers
                        , hspec
                        , scientific
+
+-- executable spdtest
+--   main-is: spdtest.hs
+--   other-modules:       Data.JsonStream.TokenParser, Data.JsonStream.CLexType, Data.JsonStream.CLexer
+--   ghc-options:         -O2 -Wall -fprof-auto
+--   c-sources:           c_lib/lexer.c
+--   include-dirs:        c_lib
+--   default-language:    Haskell2010
+--   build-depends:         base >=4.7 && <4.8
+--                        , bytestring
+--                        , text
+--                        , aeson
+--                        , vector
+--                        , unordered-containers
+--                        , scientific
