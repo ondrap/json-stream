@@ -5,10 +5,12 @@
 import Foreign
 import Foreign.C.Types
 import Data.ByteString.Unsafe (unsafeUseAsCString)
+import System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Aeson as AE
 
 import CLexType
-import Foreign.Marshal.Alloc
 import qualified Data.ByteString as BS
+import Data.JsonStream.TokenParser (Element(..), TokenResult(..))
 
 data Header = Header {
     hdrCurrentState :: !CInt
@@ -42,7 +44,7 @@ instance Storable Header where
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
 data Result = Result {
-    resType :: CInt
+    resType :: LexResultType
   , resStartPos :: CInt
   , resLength :: CInt
   , resAddData :: CInt
@@ -65,11 +67,12 @@ instance Storable Result where
 
 foreign import ccall "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr Result -> IO CInt
 
-callLex :: BS.ByteString -> Header -> IO (CInt, Header, [Result])
-callLex bs hdr = do
-  alloca $ \hdrptr -> do
+{-# NOINLINE callLex #-}
+callLex :: BS.ByteString -> Header -> (CInt, Header, [Result])
+callLex bs hdr = unsafePerformIO $
+  alloca $ \hdrptr ->
     allocaArray (resultLimit * sizeOf (undefined :: Result)) $ \resptr -> do
-      poke hdrptr hdr
+      poke hdrptr (hdr{hdrResultNum=0, hdrLength=(fromIntegral $ BS.length bs)})
 
       bsptr <- unsafeUseAsCString bs return
       res <- lexit bsptr hdrptr resptr
@@ -78,9 +81,53 @@ callLex bs hdr = do
       results <- peekArray (fromIntegral $ hdrResultNum hdrres) resptr
       return (res, hdrres, results)
 
-test = "{}"
+data TempData = TempData {
+    tmpBuffer :: BS.ByteString
+  , tmpHeader :: Header
+  , tmpError :: Bool
+}
+
+parseResults :: BS.ByteString -> (CInt, Header, [Result]) -> TokenResult
+parseResults bs (err, hdr, results) = getNextResult (parse results) newtemp
+  where
+    newtemp = TempData bs hdr (err /= 0)
+    parse = map toElement
+    toElement (Result {..})
+      -- | resType == resNumber =
+      -- | resType == resString =
+      | resType == resTrue = JValue (AE.Bool True)
+      | resType == resFalse = JValue (AE.Bool False)
+      | resType == resNull = JValue AE.Null
+      | resType == resOpenBrace = ObjectBegin
+      | resType == resCloseBrace = ObjectEnd
+      | resType == resOpenBracket = ArrayBegin
+      | resType == resCloseBracket = ArrayEnd
+      | otherwise = error "Unsupported"
+
+getNextResult :: [Element] -> TempData -> TokenResult
+getNextResult [] (TempData {..})
+  | tmpError = TokFailed ""
+  | hdrPosition tmpHeader < hdrLength tmpHeader = parseResults tmpBuffer (callLex tmpBuffer tmpHeader)
+  | otherwise = TokMoreData newdata ""
+  where
+    newdata dta = parseResults dta (callLex dta tmpHeader{hdrPosition=0, hdrLength=(fromIntegral $ BS.length dta)})
+getNextResult (next:rest) tmpdata = PartialResult next (getNextResult rest tmpdata) ""
+
+tokenParser :: BS.ByteString -> TokenResult
+tokenParser dta = getNextResult [] (TempData dta newhdr False)
+  where
+    newhdr = Header 0 0 0 0 0 0
+
+testTokens :: [BS.ByteString] -> TokenResult -> IO ()
+testTokens [] (TokMoreData _ ctx) = putStrLn $ "End of data, rest: " ++ (show ctx)
+testTokens _ (TokFailed ctx) = putStrLn $ "Token failed, rest: " ++ (show ctx)
+testTokens (dta:rest) (TokMoreData np ctx) = do
+    putStrLn $ "More data, rest: " ++ show ctx
+    testTokens rest (np dta)
+testTokens dta (PartialResult el np ctx) = do
+    putStrLn $ "Got token " ++ show el ++ ", rest: " ++ show ctx
+    testTokens dta np
+
 
 main = do
-  let basehdr = Header 0 0 0 0 (fromIntegral $ BS.length test) 0
-  (res, hdr, results) <- callLex test basehdr
-  print (res, hdr, results)
+  testTokens ["{[true, fa", "lse, null]}"] (tokenParser "")

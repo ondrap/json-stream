@@ -220,9 +220,6 @@ int handle_specchar(const char *input, struct lexer *lexer)
 
 int lexit(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
-  printf("hello world\n");
-  printf("%c%c%c\n", input[0], input[1], input[2]);
-
   lexer->result = result;
   int res = LEX_OK;
   static void* dispatch_table[] = {
@@ -264,87 +261,3 @@ int lexit(const char *input, struct lexer *lexer, struct lexer_result *result)
 
   return res;
 }
-
-char *test1 = "{}";
-char *test2 = " [ [ true, false, null, 256, \"ond\\n\\nra\", \"ma\\u0161rtin\", -3.14e+12  ]]   ";
-
-void printres(const char *input, struct lexer_result *res)
-{
-  if (res->length) {
-      printf("Inline: ");
-      for (int j=res->startpos; j < res->startpos + res->length;j++) {
-        printf("%c", input[j]);
-      }
-  } else {
-      printf("Additional data: %d", res->adddata);
-  }
-  printf("\n");
-}
-
-// int test(char *input)
-// {
-//   struct lexer lexer;
-//   lexer.current_state = STATE_BASE;
-//   lexer.position = 0;
-//   lexer.length = strlen(input);
-//   while (lexer.position < lexer.length) {
-//   // for (;*input;input++) {
-//       // lexer.position = 0;
-//       // lexer.length = 1;
-//       lexer.result_num = 0;
-//
-//       int res = lexit(input, &lexer);
-//       if (res == LEX_ERROR) {
-//         printf("LEX ERROR\n");
-//         break;
-//       }
-//       if (lexer.result_num)
-//         printf("Count of results: %d\n", lexer.result_num);
-//       for (int i=0; i < lexer.result_num; i++) {
-//         struct lexer_result *res = &lexer.result[i];
-//         printf("Item: TYPE: %d POS: %d, LEN: %d\n",
-//                 res->restype, res->startpos, res->length);
-//         if (res->restype == RES_NUMBER || res->restype == RES_NUMBER_PARTIAL) {
-//             printres(input, res);
-//         } else if (res->restype == RES_STRING || res->restype == RES_STRING_PARTIAL || res->restype == RES_STRING_UNI) {
-//             printres(input, res);
-//         }
-//       }
-//   }
-//   return 0;
-// }
-//
-// void speedtest(int fd)
-// {
-//     int counter = 0;
-//     const int bufsize = 32768;
-//     char buffer[bufsize];
-//     struct lexer lexer;
-//
-//     int size = read(fd, buffer, bufsize);
-//     for (int i=0; i< 50000; i++) {
-//         lexer.current_state = STATE_BASE;
-//         lexer.position = 0;
-//         lexer.length = size;
-//
-//         while (lexer.position < lexer.length) {
-//           lexer.result_num = 0;
-//           int res = lexit(buffer, &lexer);
-//           if (res) {
-//             printf("Error\n");
-//             return;
-//           }
-//         }
-//     }
-//     printf("Total: %d\n", counter);
-// }
-//
-// int main(void) {
-//   test(test2);
-  // int fd = open("test.json", O_RDONLY);
-  // if (fd == -1) {
-  //   perror("File");
-  //   return 0;
-  // }
-  // speedtest(fd);
-// }

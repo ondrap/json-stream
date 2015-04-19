@@ -1,9 +1,10 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module CLexType where
 
-import Foreign
 import Foreign.C.Types
+import Foreign
 
-newtype LexResultType = LexResultType CInt
+newtype LexResultType = LexResultType CInt deriving (Show, Eq, Storable)
 
 #include "lexer.h"
 
@@ -18,7 +19,7 @@ resultLimit       =  #const RESULT_COUNT
   , resNull = RES_NULL
 
   , resOpenBrace = RES_OPEN_BRACE
-  , resCloseBrac = RES_CLOSE_BRACE
+  , resCloseBrace = RES_CLOSE_BRACE
   , resOpenBracket = RES_OPEN_BRACKET
   , resCloseBracket = RES_CLOSE_BRACKET
 
