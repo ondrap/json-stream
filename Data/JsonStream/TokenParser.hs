@@ -19,7 +19,7 @@ import qualified Data.Text             as T
 import           Data.Text.Encoding    (decodeUtf8', encodeUtf8)
 
 data Element = ArrayBegin | ArrayEnd | ObjectBegin | ObjectEnd
-               | StringBegin BS.ByteString | StringContent BS.ByteString | StringEnd
+               | StringContent BS.ByteString | StringEnd
                | JValue AE.Value
                deriving (Show, Eq)
 
@@ -181,7 +181,7 @@ parseString = do
     if chr == '"'
       then pickChar >> handleDecode firstpart
       else do
-        yield $ StringBegin firstpart
+        yield $ StringContent firstpart
         handleString
   where
     handleDecode str = case decodeUtf8' str of

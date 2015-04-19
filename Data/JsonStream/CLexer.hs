@@ -187,10 +187,7 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
       -- -- Unicode
       | resType == resStringUni =
           PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum $ fromIntegral resAddData)) (parse rest) context
-      -- Partial string, start
-      | resType == resStringPartial && resAddData == 0 =
-          PartialResult (StringBegin textSection) (parse rest) context
-      -- -- Partial string middle
+      -- -- Partial string, not the end
       | resType == resStringPartial =
           if resLength == 0
             then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) (parse rest) context

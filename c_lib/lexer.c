@@ -134,20 +134,22 @@ int handle_string(const char *input, struct lexer *lexer)
     if (lexer->position == lexer->length || input[lexer->position] == '\\') {
       // Emit partial string
       res->restype = RES_STRING_PARTIAL;
-      res->adddata = lexer->state_data;
-      lexer->state_data = 1; // Set we are partial for next parts
-      if (res->length) // Skip, if the string is empty
+      res->adddata = 0;
+      if (res->length != 0) // Do not add new result, if length == 0
           lexer->result_num++;
+
       // If we stopped because of backslash, change state, move one forward
       if (lexer->position < lexer->length) {
           lexer->current_state = STATE_STRING_SPECCHAR;
+          lexer->state_data = 0;
           lexer->position++;
-      }
+      } else
+          lexer->state_data = 1;
       return LEX_OK;
     } else if (input[lexer->position] == '"') {
       res->restype = RES_STRING;
       res->adddata = lexer->state_data;
-      // We can just point directly to the input
+
       lexer->result_num++;
       lexer->current_state = STATE_BASE;
       lexer->position++; // Skip the final '"'
@@ -178,7 +180,9 @@ static int handle_string_uni(const char *input, struct lexer *lexer)
       res->restype = RES_STRING_UNI;
       res->adddata = lexer->state_data_2;
       lexer->result_num++;
+
       lexer->current_state = STATE_STRING;
+      lexer->state_data = 1; // Set that we are in partial string, see handle_string
   }
   return LEX_OK;
 }
@@ -196,6 +200,7 @@ static inline void emitchar(char ch, struct lexer *lexer)
   lexer->result_num++;
   lexer->position++;
   lexer->current_state = STATE_STRING;
+  lexer->state_data = 1; // Set the string is in partial data
 }
 
 int handle_specchar(const char *input, struct lexer *lexer)

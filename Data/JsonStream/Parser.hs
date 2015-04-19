@@ -83,6 +83,8 @@ import qualified Data.Vector                 as Vec
 
 import           Data.JsonStream.TokenParser hiding(tokenParser)
 import Data.JsonStream.CLexer (tokenParser)
+import Data.Bits (setBit, clearBit)
+-- import           Data.JsonStream.TokenParser
 
 
 -- | Limit for the size of an object key
@@ -208,7 +210,7 @@ object' once valparse = Parser $ moreData object''
     keyValue _ el ntok =
       case el of
         JValue (AE.String key) -> callParse (valparse key) ntok
-        StringBegin str -> moreData (getLongKey [str] (BS.length str)) ntok
+        StringContent str -> moreData (getLongKey [str] (BS.length str)) ntok
         _| el == ArrayEnd || el == ObjectEnd -> Done (Just el) ntok
          | otherwise -> Failed ("Object - unexpected token: " ++ show el)
 
@@ -260,7 +262,7 @@ aeValue = Parser $ moreData value'
     value' tok el ntok =
       case el of
         JValue val -> Yield val (Done Nothing ntok)
-        StringBegin _ -> callParse (AE.String <$> longString Nothing) tok
+        StringContent _ -> callParse (AE.String <$> longString Nothing) tok
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
         ObjectBegin -> AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
         ArrayEnd -> Done (Just el) ntok
@@ -289,7 +291,6 @@ longString mbounds = Parser $ moreData (handle [] 0)
     handle acc len tok el ntok =
       case el of
         JValue (AE.String str) -> Yield str (Done Nothing ntok)
-        StringBegin str -> moreData (handle [str] (BS.length str)) ntok
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreVal' 1) ntok
@@ -308,7 +309,6 @@ bytestring = Parser $ moreData (handle [])
     handle acc tok el ntok =
       case el of
         JValue (AE.String str) -> Yield (BL.fromChunks [encodeUtf8 str]) (Done Nothing ntok)
-        StringBegin str -> moreData (handle [str]) ntok
         StringContent str -> moreData (handle (str:acc)) ntok
         StringEnd -> Yield (BL.fromChunks $ reverse acc) (Done Nothing ntok)
         _ -> callParse ignoreVal tok
@@ -415,9 +415,8 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
     handleTok level _ el ntok =
       case el of
         JValue _ -> moreData (handleTok level) ntok
-        StringBegin _ -> moreData (handleTok (level + 1)) ntok
-        StringEnd -> moreData (handleTok (level - 1)) ntok
-        StringContent _ -> moreData (handleTok level) ntok
+        StringContent _ -> moreData (handleTok (setBit level 30)) ntok
+        StringEnd -> moreData (handleTok (clearBit level 30)) ntok -- The 30s bit indicates that we are in string
         _| el == ArrayBegin || el == ObjectBegin -> moreData (handleTok (level + 1)) ntok
          | el == ArrayEnd || el == ObjectEnd -> moreData (handleTok (level - 1)) ntok
          | otherwise -> Failed "UnexpectedEnd "
