@@ -338,7 +338,8 @@ number = jvalue cvt (Just . fromIntegral)
     cvt (AE.Number num) = Just num
     cvt _ = Nothing
 
--- | Parse to integer type.
+-- | Parse to integer type. If you are using integer numbers, use this parser.
+-- It skips the conversion JSON-> 'Scientific' -> Int and uses an Int directly.
 integer :: (Integral i, Bounded i) => Parser i
 integer = jvalue cvt (Just . fromIntegral)
   where
@@ -605,13 +606,12 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- > [("test1",1),("test2",-1),("test3",-1)]
 
 -- $performance
--- The parser tries to do the least amount of work to get the job done. The speed is limited mostly
--- by the lexer (which is not very good). The parser itself is quite efficient in eliminating
--- the work that does not need to be done.
+-- The parser tries to do the least amount of work to get the job done, skipping over items that
+-- are not required. General guidelines to get best performance:
 --
--- This can become quite significant if the resulting structure contains only a subset of the data.
--- The parser skips pieces that are not relevant. Using parsers 'string', 'integer' etc. is preferable
--- to the FromJSON 'value'.
+-- Do not use the 'value' parser for the whole object if the object is big. Using json-stream
+-- parsers will produce better results with less memory. The 'integer' parser was optimized in such
+-- a way that the integer numbers skip the conversion to scientific, which is unavoidable in aeson.
 --
 -- It is possible to use the '*>' operator to filter objects based on a condition, e.g.:
 --
@@ -620,3 +620,4 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 --
 -- This will return all objects that contain attribute error with number content. The parser will
 -- skip trying to decode the name attribute if error is not found.
+--

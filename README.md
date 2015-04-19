@@ -6,20 +6,10 @@ must read the whole structure into memory. At a first sight it seemed that creat
 an incremental JSON parser would be very hard thing to do; it turned out to be
 remarkable easy. Just wondering, why nobody came with this earlier...
 
-> Parsing is
-> from 40% faster to ~90% slower than aeson, depending on the parser
-> grammar and the test. Generally, parsing small pieces is faster with aeson, parsing
-> large structures consisting of smaller objects works better with
-> json-stream because of lower memory
-> consumption and less stress on the GC. Creating parsers for complex
-> JSON structures can be much easier using json-stream. The culprit of the slow
-> performance is probably the lexer, that is the area that can probably be improved.
->
-> Counting number of array elements in 120MB
-> JSON file (1M elements) needed 1.7GB in aeson, 1.5GB with json-stream in the aeson mode
-> (the grammar being just `value`; in reality json-stream needed more memory, the GC just did the job
-> differently). 700MB was needed when json-stream grammar was used
-> and only 2MB in streaming mode when parsed data was discarded after processing.
+> Parsing performance is generally better than aeson, sometimes significantly better.
+> Json-stream uses a small and fast C lexer to parse the JSON into tokens. This results
+> in quite significant performance gain. Ideal scenario is parsing large files
+> where not all information is required; json-stream parses only what is really needed.
 
 Standard aeson library reads the whole input, creates an object in memory representing
 the JSON structure which is then converted into proper values using FromJSON instances.
