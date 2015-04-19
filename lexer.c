@@ -52,7 +52,7 @@ static inline int handle_base(const char *input, struct lexer *lexer)
     case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
     case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
     case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
-    case '"': lexer->current_state = STATE_STRING; lexer->position++;return LEX_OK;
+    case '"': lexer->current_state = STATE_STRING; lexer->state_data = 0; lexer->position++;return LEX_OK;
     case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;return LEX_OK;
@@ -133,6 +133,8 @@ int handle_string(const char *input, struct lexer *lexer)
     if (lexer->position == lexer->length || input[lexer->position] == '\\') {
       // Emit partial string
       res->restype = RES_STRING_PARTIAL;
+      res->adddata = lexer->state_data;
+      lexer->state_data = 1; // Set we are partial for next parts
       if (res->length) // Skip, if the string is empty
           lexer->result_num++;
       // If we stopped because of backslash, change state, move one forward
@@ -143,6 +145,7 @@ int handle_string(const char *input, struct lexer *lexer)
       return LEX_OK;
     } else if (input[lexer->position] == '"') {
       res->restype = RES_STRING;
+      res->adddata = lexer->state_data;
       // We can just point directly to the input
       lexer->result_num++;
       lexer->current_state = STATE_BASE;

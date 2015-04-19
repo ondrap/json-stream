@@ -24,6 +24,5 @@ resultLimit       =  #const RESULT_COUNT
   , resCloseBracket = RES_CLOSE_BRACKET
 
   , resStringPartial = RES_STRING_PARTIAL
-  , resNumberPartial = RES_NUMBER_PARTIAL
   , resStringUni = RES_STRING_UNI
   }
