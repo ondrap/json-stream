@@ -8,7 +8,7 @@ module Data.JsonStream.CLexer (
   tokenParser
 ) where
 
-import Control.Applicative ((<$>))
+import           Control.Applicative         ((<$>))
 import           Control.Monad               (when)
 import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BSW
@@ -55,28 +55,28 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
-peekResult :: Int -> ForeignPtr () -> (LexResultType, CInt, CInt, CInt)
+peekResult :: Int -> ForeignPtr () -> (LexResultType, Int, Int, Int)
 peekResult n fptr = unsafeDupablePerformIO $
   withForeignPtr fptr $ \ptr -> do
     rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
     if | rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket || rtype == resNull ->
           return (rtype, 0, 0, 0)
        | rtype == resCloseBrace || rtype == resCloseBracket -> do
-          rpos <- peekByteOff ptr (recsize * n + isize)
-          rlen <- peekByteOff ptr (recsize * n + 2 * isize)
-          return (rtype, rpos, rlen, 0)
+          rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
+          rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
+          return (rtype, fromIntegral rpos, fromIntegral rlen, 0)
        | otherwise -> do
-          rpos <- peekByteOff ptr (recsize * n + isize)
-          rlen <- peekByteOff ptr (recsize * n + 2 * isize)
-          rdata <- peekByteOff ptr (recsize * n + 3 * isize)
-          return (rtype, rpos, rlen, rdata)
+          rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
+          rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
+          rdata <- peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt
+          return (rtype, fromIntegral rpos, fromIntegral rlen, fromIntegral rdata)
   where
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
 
 foreign import ccall unsafe "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
-callLex :: BS.ByteString -> Header -> (CInt, Header, [(Int, ForeignPtr ())])
+callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ForeignPtr ()))
 callLex bs hdr = unsafeDupablePerformIO $
   alloca $ \hdrptr -> do
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
@@ -87,7 +87,8 @@ callLex bs hdr = unsafeDupablePerformIO $
       lexit bsptr hdrptr resptr'
 
     hdrres <- peek hdrptr
-    let results = zip [0..(fromIntegral $ hdrResultNum hdrres - 1)] (repeat resptr)
+    let !rescount = fromIntegral (hdrResultNum hdrres)
+        results = (rescount, rescount, resptr)
     return (res, hdrres, results)
 
 substr :: Int -> Int -> BS.ByteString -> BS.ByteString
@@ -146,60 +147,65 @@ parseNumber tnumber = do
         dchr = BSW.head txt
 
 
-parseResults :: TempData -> (CInt, Header, [(Int, ForeignPtr ())]) -> TokenResult
+parseResults :: TempData -> (CInt, Header, (Int, Int, ForeignPtr ())) -> TokenResult
 parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results) = parse results
   where
     newtemp = TempData bs hdr (err /= 0)
-    parse [] = getNextResult (newtemp tmpNumbers)
-    parse ((respos, ptr):rest) =
-      let (resType, resStartPos, resLength, resAddData) = peekResult respos ptr
-          context = BS.drop (fromIntegral (resStartPos + resLength)) bs
-          textSection = substr (fromIntegral resStartPos) (fromIntegral resLength) bs
+    -- We iterate the items from CNT to 1, 1 is the last element, CNT is the first
+    parse (0, _, _) = getNextResult (newtemp tmpNumbers)
+    parse (n, cnt, ptr) =
+      let (resType, resStartPos, resLength, resAddData) = peekResult (cnt - n) ptr
+          next = parse (n-1, cnt, ptr)
+          context = BS.drop (resStartPos + resLength) bs
+          textSection = substr resStartPos resLength bs
       in case () of
-       _| null rest && resType == resNumberPartial && resAddData == 0 -> getNextResult (newtemp [textSection])
-        | null rest && resType == resNumberPartial -> getNextResult (newtemp (textSection:tmpNumbers))
-        | resType == resTrue -> PartialResult (JValue (AE.Bool True)) (parse rest)
-        | resType == resFalse -> PartialResult (JValue (AE.Bool False)) (parse rest)
-        | resType == resNull -> PartialResult (JValue AE.Null) (parse rest)
-        | resType == resOpenBrace -> PartialResult ObjectBegin (parse rest)
-        | resType == resOpenBracket -> PartialResult ArrayBegin (parse rest)
+        -- First part of partial number
+       _| n == 1 && resType == resNumberPartial && resAddData == 0 -> getNextResult (newtemp [textSection])
+        -- Next part of partial number
+        | n == 1 && resType == resNumberPartial -> getNextResult (newtemp (textSection:tmpNumbers))
+        | resType == resTrue -> PartialResult (JValue (AE.Bool True)) next
+        | resType == resFalse -> PartialResult (JValue (AE.Bool False)) next
+        | resType == resNull -> PartialResult (JValue AE.Null) next
+        | resType == resOpenBrace -> PartialResult ObjectBegin next
+        | resType == resOpenBracket -> PartialResult ArrayBegin next
         -- ObjectEnd and ArrayEnd need pointer to data that wasn't parsed
-        | resType == resCloseBrace -> PartialResult (ObjectEnd context) (parse rest)
-        | resType == resCloseBracket -> PartialResult (ArrayEnd context) (parse rest)
+        | resType == resCloseBrace -> PartialResult (ObjectEnd context) next
+        | resType == resCloseBracket -> PartialResult (ArrayEnd context) next
         -- Number optimized - integer
         | resType == resNumberSmall && resLength == 0 ->
-              PartialResult (JInteger $ fromIntegral resAddData) (parse rest)
+              PartialResult (JInteger resAddData) next
         -- Number optimized - floating
         | resType == resNumberSmall ->
               PartialResult
-                (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * fromIntegral resLength)))
-                (parse rest)
+                (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * resLength)))
+                next
         -- Number single
         | resType == resNumber && resAddData == 0 ->
             case parseNumber textSection of
-              Just num -> PartialResult (JValue (AE.Number num)) (parse rest)
+              Just num -> PartialResult (JValue (AE.Number num)) next
               Nothing -> TokFailed
         -- Number from parts
         | resType == resNumber ->
             case parseNumber (BS.concat $ reverse (textSection:tmpNumbers)) of
-              Just num -> PartialResult (JValue (AE.Number num)) (parse rest)
+              Just num -> PartialResult (JValue (AE.Number num)) next
               Nothing -> TokFailed
         -- Single string
         | resType == resString && resAddData == 0 ->
             case decodeUtf8' textSection of
-              Right ctext -> PartialResult (JValue (AE.String ctext)) (parse rest)
+              Right ctext -> PartialResult (JValue (AE.String ctext)) next
               Left _ -> TokFailed
         -- Final part
         | resType == resString ->
-            PartialResult (StringContent textSection) (PartialResult StringEnd (parse rest))
+            PartialResult (StringContent textSection)
+              (PartialResult StringEnd next)
         -- -- Unicode
         | resType == resStringUni ->
-            PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum $ fromIntegral resAddData)) (parse rest)
+            PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum resAddData)) next
         -- -- Partial string, not the end
         | resType == resStringPartial ->
             if resLength == 0
-              then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) (parse rest)
-              else PartialResult (StringContent textSection) (parse rest)
+              then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) next -- \n\r..
+              else PartialResult (StringContent textSection) next -- normal string section
         | otherwise -> error "Unsupported"
 
 getNextResult :: TempData -> TokenResult
