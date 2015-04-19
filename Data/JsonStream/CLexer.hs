@@ -1,23 +1,25 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE BangPatterns          #-}
 
 module Data.JsonStream.CLexer (
   tokenParser
 ) where
 
+import Control.Applicative ((<$>))
+import           Control.Monad               (when)
 import qualified Data.Aeson                  as AE
+import qualified Data.ByteString             as BSW
+import qualified Data.ByteString.Char8       as BS
 import           Data.ByteString.Unsafe      (unsafeUseAsCString)
+import           Data.Scientific             (Scientific, scientific)
 import qualified Data.Text                   as T
 import           Data.Text.Encoding          (decodeUtf8', encodeUtf8)
 import           Foreign
 import           Foreign.C.Types
-import           System.IO.Unsafe            (unsafePerformIO)
-import           Data.Scientific       (scientific, Scientific)
-import Control.Monad (when)
-import qualified Data.ByteString as BSW
-import qualified Data.ByteString.Char8             as BS
+import           System.IO.Unsafe            (unsafeDupablePerformIO)
 
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
@@ -33,7 +35,7 @@ data Header = Header {
 } deriving (Show)
 
 instance Storable Header where
-  sizeOf _ = 8 * sizeOf (undefined :: CInt)
+  sizeOf _ = 7 * sizeOf (undefined :: CInt)
   alignment _ = sizeOf (undefined :: CInt)
   peek ptr = do
     state <- peekByteOff ptr 0
@@ -53,33 +55,36 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
-
 peekResult :: Int -> ForeignPtr () -> (LexResultType, CInt, CInt, CInt)
-peekResult n fptr = unsafePerformIO $ do
+peekResult n fptr = unsafeDupablePerformIO $
   withForeignPtr fptr $ \ptr -> do
-    rtype <- peekByteOff ptr (recsize * n)
-    rpos <- peekByteOff ptr (recsize * n + isize)
-    rlen <- peekByteOff ptr (recsize * n + 2 * isize)
-    rdata <- peekByteOff ptr (recsize * n + 3 * isize)
-    return (LexResultType rtype, rpos, rlen, rdata)
+    rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
+    if | rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket || rtype == resNull ->
+          return (rtype, 0, 0, 0)
+       | rtype == resCloseBrace || rtype == resCloseBracket -> do
+          rpos <- peekByteOff ptr (recsize * n + isize)
+          rlen <- peekByteOff ptr (recsize * n + 2 * isize)
+          return (rtype, rpos, rlen, 0)
+       | otherwise -> do
+          rpos <- peekByteOff ptr (recsize * n + isize)
+          rlen <- peekByteOff ptr (recsize * n + 2 * isize)
+          rdata <- peekByteOff ptr (recsize * n + 3 * isize)
+          return (rtype, rpos, rlen, rdata)
   where
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
 
+foreign import ccall unsafe "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
-foreign import ccall "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
-
-{-# NOINLINE callLex #-}
 callLex :: BS.ByteString -> Header -> (CInt, Header, [(Int, ForeignPtr ())])
-callLex bs hdr = unsafePerformIO $
+callLex bs hdr = unsafeDupablePerformIO $
   alloca $ \hdrptr -> do
-    poke hdrptr (hdr{hdrResultNum=0, hdrLength=(fromIntegral $ BS.length bs)})
+    poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
 
     bsptr <- unsafeUseAsCString bs return
-    -- TODO - mask
-    resptr_ <- mallocBytes (resultLimit * (sizeOf (undefined :: CInt)) * 4)
-    res <- lexit bsptr hdrptr resptr_
-    resptr <- newForeignPtr finalizerFree resptr_
+    resptr <- mallocForeignPtrBytes (resultLimit * sizeOf (undefined :: CInt) * 4)
+    res <- withForeignPtr resptr $ \resptr' ->
+      lexit bsptr hdrptr resptr'
 
     hdrres <- peek hdrptr
     let results = zip [0..(fromIntegral $ hdrResultNum hdrres - 1)] (repeat resptr)
@@ -89,9 +94,9 @@ substr :: Int -> Int -> BS.ByteString -> BS.ByteString
 substr start len = BS.take len . BS.drop start
 
 data TempData = TempData {
-    tmpBuffer :: BS.ByteString
-  , tmpHeader :: Header
-  , tmpError  :: Bool
+    tmpBuffer  :: BS.ByteString
+  , tmpHeader  :: Header
+  , tmpError   :: Bool
   , tmpNumbers :: [BS.ByteString]
 }
 
@@ -102,7 +107,7 @@ parseNumber tnumber = do
       ((num, numdigits), r2) = parseDecimal r1 :: ((Integer, Int), BS.ByteString)
       ((frac, frdigits), r3) = parseFract r2 :: ((Int, Int), BS.ByteString)
       (texp, rest) = parseE r3
-    when (numdigits == 0 || not (BS.null rest)) $ Nothing
+    when (numdigits == 0 || not (BS.null rest)) Nothing
     let dpart = fromIntegral csign * (num * (10 ^ frdigits) + fromIntegral frac) :: Integer
         e = texp - frdigits
     return $ scientific dpart e
@@ -198,7 +203,7 @@ getNextResult tmp@(TempData {..})
     newdata dta = parseResults newtmp (callLex dta newhdr)
       where
         newtmp = tmp{tmpBuffer=dta}
-        newhdr = tmpHeader{hdrPosition=0, hdrLength=(fromIntegral $ BS.length dta)}
+        newhdr = tmpHeader{hdrPosition=0, hdrLength=fromIntegral $ BS.length dta}
 
 
 tokenParser :: BS.ByteString -> TokenResult
