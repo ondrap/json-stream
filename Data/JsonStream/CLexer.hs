@@ -77,7 +77,7 @@ foreign import ccall "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr Result -> I
 callLex :: BS.ByteString -> Header -> (CInt, Header, [Result])
 callLex bs hdr = unsafePerformIO $
   alloca $ \hdrptr ->
-    allocaArray (resultLimit * sizeOf (undefined :: Result)) $ \resptr -> do
+    allocaArray resultLimit $ \resptr -> do
       poke hdrptr (hdr{hdrResultNum=0, hdrLength=(fromIntegral $ BS.length bs)})
 
       bsptr <- unsafeUseAsCString bs return
