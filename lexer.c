@@ -101,14 +101,15 @@ int handle_number(const char *input, struct lexer *lexer)
        ;
 
   struct lexer_result *res = &lexer->result[lexer->result_num];
+  res->adddata = lexer->state_data;
   if (lexer->position == lexer->length) {
     res->restype = RES_NUMBER_PARTIAL;
+    lexer->state_data = 1;
   } else {
     res->restype = RES_NUMBER;
     lexer->current_state = STATE_BASE;
   }
   // We can just point directly to the input
-  res->adddata = 0;
   res->startpos = startposition;
   res->length = lexer->position - startposition;
 
