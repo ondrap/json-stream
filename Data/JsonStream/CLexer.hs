@@ -3,9 +3,12 @@
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE BangPatterns          #-}
 
+module Data.JsonStream.CLexer (
+  tokenParser
+) where
+
 import qualified Data.Aeson                  as AE
 import           Data.ByteString.Unsafe      (unsafeUseAsCString)
-import           Data.List                   (unfoldr)
 import qualified Data.Text                   as T
 import           Data.Text.Encoding          (decodeUtf8', encodeUtf8)
 import           Foreign
@@ -16,7 +19,7 @@ import Control.Monad (when)
 import qualified Data.ByteString as BSW
 import qualified Data.ByteString.Char8             as BS
 
-import           CLexType
+import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
 
 data Header = Header {
@@ -82,7 +85,7 @@ callLex bs hdr = unsafePerformIO $
 
       hdrres <- peek hdrptr
       results <- peekArray (fromIntegral $ hdrResultNum hdrres) resptr
-      return (res, hdrres, results)
+      return $ (res, hdrres, results)
 
 substr :: Int -> Int -> BS.ByteString -> BS.ByteString
 substr start len = BS.take len . BS.drop start
@@ -212,18 +215,15 @@ getNextResult tmp@(TempData {..})
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = getNextResult (TempData dta newhdr False [])
   where
-    newhdr = Header 0 0 0 0 0 0
+    newhdr = Header 0 0 0 0 (fromIntegral $ BS.length dta) 0
 
-testTokens :: [BS.ByteString] -> TokenResult -> IO ()
-testTokens [] (TokMoreData _ ctx) = putStrLn $ "End of data, rest: " ++ (show ctx)
-testTokens _ (TokFailed ctx) = putStrLn $ "Token failed, rest: " ++ (show ctx)
-testTokens (dta:rest) (TokMoreData np ctx) = do
-    putStrLn $ "More data, rest: " ++ show ctx
-    testTokens rest (np dta)
-testTokens dta (PartialResult el np ctx) = do
-    putStrLn $ "Got token " ++ show el ++ ", rest: " ++ show ctx
-    testTokens dta np
-
-
-main = do
-  testTokens ["{[true, fa", "lse, 1", "5", "", "5", "", ", 12.3, null, \"tes\\u0041\\u0078\\u0161ssdfdsfd\"]} "] (tokenParser "")
+-- testTokens :: [BS.ByteString] -> TokenResult -> IO ()
+-- testTokens [] (TokMoreData _ ctx) = putStrLn $ "End of data, rest: " ++ (show ctx)
+-- testTokens _ (TokFailed ctx) = putStrLn $ "Token failed, rest: " ++ (show ctx)
+-- testTokens (dta:rest) (TokMoreData np ctx) = do
+--     putStrLn $ "More data, rest: " ++ show ctx
+--     testTokens rest (np dta)
+-- testTokens dta (PartialResult el np ctx) = do
+--     putStrLn $ "Got token " ++ show el ++ ", rest: " ++ show ctx
+--     testTokens dta np
+--

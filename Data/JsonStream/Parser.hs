@@ -81,7 +81,8 @@ import qualified Data.Text.Lazy              as TL
 import           Data.Text.Lazy.Encoding     (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
-import           Data.JsonStream.TokenParser
+import           Data.JsonStream.TokenParser hiding(tokenParser)
+import Data.JsonStream.CLexer (tokenParser)
 
 
 -- | Limit for the size of an object key

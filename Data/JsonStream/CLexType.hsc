@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module CLexType where
+module Data.JsonStream.CLexType where
 
 import Foreign.C.Types
 import Foreign
@@ -25,4 +25,5 @@ resultLimit       =  #const RESULT_COUNT
 
   , resStringPartial = RES_STRING_PARTIAL
   , resStringUni = RES_STRING_UNI
+  , resNumberPartial = RES_NUMBER_PARTIAL
   }
