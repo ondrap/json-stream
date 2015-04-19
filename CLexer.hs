@@ -161,6 +161,12 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
       | resType == resCloseBrace = PartialResult ObjectEnd (parse rest) context
       | resType == resOpenBracket = PartialResult ArrayBegin (parse rest) context
       | resType == resCloseBracket = PartialResult ArrayEnd (parse rest) context
+      -- Number single
+      | resType == resNumber && resAddData == 0 =
+          case parseNumber textSection of
+            Just num -> PartialResult (JValue (AE.Number num)) (parse rest) context
+            Nothing -> TokFailed context
+      -- Number from parts
       | resType == resNumber =
           case parseNumber (BS.concat $ reverse (textSection:tmpNumbers)) of
             Just num -> PartialResult (JValue (AE.Number num)) (parse rest) context
@@ -220,4 +226,4 @@ testTokens dta (PartialResult el np ctx) = do
 
 
 main = do
-  testTokens ["{[true, fa", "lse, 1", "55, 12.3, null, \"tes\\u0041\\u0078\\u0161ssdfdsfd\"]} "] (tokenParser "")
+  testTokens ["{[true, fa", "lse, 1", "5", "", "5", "", ", 12.3, null, \"tes\\u0041\\u0078\\u0161ssdfdsfd\"]} "] (tokenParser "")
