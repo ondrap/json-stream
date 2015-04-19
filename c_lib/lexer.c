@@ -19,13 +19,13 @@ static inline int isJnumber(char chr)
 }
 
 // Add simple result to the result list
-static inline void add_simple_res(int restype, struct lexer *lexer)
+static inline void add_simple_res(int restype, struct lexer *lexer, int length)
 {
   struct lexer_result *res = &lexer->result[lexer->result_num];
 
   res->restype = restype;
   res->startpos = lexer->position;
-  res->length = 0;
+  res->length = length;
   lexer->result_num++;
 }
 
@@ -48,10 +48,10 @@ static inline int handle_base(const char *input, struct lexer *lexer)
 
   char chr = input[lexer->position];
   switch (chr) {
-    case '{': add_simple_res(RES_OPEN_BRACE, lexer); lexer->position++;break;
-    case '}': add_simple_res(RES_CLOSE_BRACE, lexer); lexer->position++;break;
-    case '[': add_simple_res(RES_OPEN_BRACKET, lexer); lexer->position++;break;
-    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer); lexer->position++;break;
+    case '{': add_simple_res(RES_OPEN_BRACE, lexer, 1); lexer->position++;break;
+    case '}': add_simple_res(RES_CLOSE_BRACE, lexer, 1); lexer->position++;break;
+    case '[': add_simple_res(RES_OPEN_BRACKET, lexer, 1); lexer->position++;break;
+    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer, 1); lexer->position++;break;
     case '"': lexer->current_state = STATE_STRING; lexer->state_data = 0; lexer->position++;return LEX_OK;
     case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
@@ -76,7 +76,7 @@ static inline int handle_ident(const char *input, struct lexer *lexer, const cha
     if (!ident[lexer->state_data]) {
       // Check that the next character is allowed
       if (isempty(chr) || chr == ']' || chr == '}') {
-        add_simple_res(idtype, lexer);
+        add_simple_res(idtype, lexer, lexer->state_data);
         lexer->current_state = STATE_BASE;
         return LEX_OK;
       } else {
@@ -176,7 +176,8 @@ static int handle_string_uni(const char *input, struct lexer *lexer)
   if (lexer->state_data == 4) {
       // Emit the result
       struct lexer_result *res = &lexer->result[lexer->result_num];
-      res->startpos = lexer->position - 1;
+      res->startpos = lexer->position;
+      res->length = 0;
       res->restype = RES_STRING_UNI;
       res->adddata = lexer->state_data_2;
       lexer->result_num++;

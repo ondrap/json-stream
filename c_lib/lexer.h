@@ -31,7 +31,7 @@ enum states {
 
 struct lexer_result {
   int restype;
-  int startpos;
+  int startpos; // Startpos + length should point to unparsed data
   int length;
 
   int adddata; // Additional data to result

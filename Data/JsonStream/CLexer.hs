@@ -157,51 +157,50 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
       where
         textSection = substr (fromIntegral resStartPos) (fromIntegral resLength) bs
     parse (Result {..}:rest)
-      | resType == resTrue = PartialResult (JValue (AE.Bool True)) (parse rest) context
-      | resType == resFalse = PartialResult (JValue (AE.Bool False)) (parse rest) context
-      | resType == resNull = PartialResult (JValue AE.Null) (parse rest) context
-      | resType == resOpenBrace = PartialResult ObjectBegin (parse rest) context
-      | resType == resCloseBrace = PartialResult ObjectEnd (parse rest) context
-      | resType == resOpenBracket = PartialResult ArrayBegin (parse rest) context
-      | resType == resCloseBracket = PartialResult ArrayEnd (parse rest) context
+      | resType == resTrue = PartialResult (JValue (AE.Bool True)) (parse rest)
+      | resType == resFalse = PartialResult (JValue (AE.Bool False)) (parse rest)
+      | resType == resNull = PartialResult (JValue AE.Null) (parse rest)
+      | resType == resOpenBrace = PartialResult ObjectBegin (parse rest)
+      | resType == resOpenBracket = PartialResult ArrayBegin (parse rest)
+      -- ObjectEnd and ArrayEnd need pointer to data that wasn't parsed
+      | resType == resCloseBrace = PartialResult (ObjectEnd context) (parse rest)
+      | resType == resCloseBracket = PartialResult (ArrayEnd context) (parse rest)
       -- Number single
       | resType == resNumber && resAddData == 0 =
           case parseNumber textSection of
-            Just num -> PartialResult (JValue (AE.Number num)) (parse rest) context
-            Nothing -> TokFailed context
+            Just num -> PartialResult (JValue (AE.Number num)) (parse rest)
+            Nothing -> TokFailed
       -- Number from parts
       | resType == resNumber =
           case parseNumber (BS.concat $ reverse (textSection:tmpNumbers)) of
-            Just num -> PartialResult (JValue (AE.Number num)) (parse rest) context
-            Nothing -> TokFailed context
+            Just num -> PartialResult (JValue (AE.Number num)) (parse rest)
+            Nothing -> TokFailed
       -- Single string
       | resType == resString && resAddData == 0 =
           case decodeUtf8' textSection of
-            Right ctext -> PartialResult (JValue (AE.String ctext)) (parse rest) context
-            Left _ -> TokFailed context
+            Right ctext -> PartialResult (JValue (AE.String ctext)) (parse rest)
+            Left _ -> TokFailed
       -- Final part
       | resType == resString =
-          PartialResult (StringContent textSection)
-            (PartialResult StringEnd (parse rest) context)
-            context
+          PartialResult (StringContent textSection) (PartialResult StringEnd (parse rest))
       -- -- Unicode
       | resType == resStringUni =
-          PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum $ fromIntegral resAddData)) (parse rest) context
+          PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum $ fromIntegral resAddData)) (parse rest)
       -- -- Partial string, not the end
       | resType == resStringPartial =
           if resLength == 0
-            then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) (parse rest) context
-            else PartialResult (StringContent textSection) (parse rest) context
+            then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) (parse rest)
+            else PartialResult (StringContent textSection) (parse rest)
       | otherwise = error "Unsupported"
       where
-        context = BS.drop (fromIntegral resStartPos) bs
+        context = BS.drop (fromIntegral (resStartPos + resLength)) bs
         textSection = substr (fromIntegral resStartPos) (fromIntegral resLength) bs
 
 getNextResult :: TempData -> TokenResult
 getNextResult tmp@(TempData {..})
-  | tmpError = TokFailed ""
+  | tmpError = TokFailed
   | hdrPosition tmpHeader < hdrLength tmpHeader = parseResults tmp (callLex tmpBuffer tmpHeader)
-  | otherwise = TokMoreData newdata ""
+  | otherwise = TokMoreData newdata
   where
     newdata dta = parseResults newtmp (callLex dta newhdr)
       where
