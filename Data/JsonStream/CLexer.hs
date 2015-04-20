@@ -31,6 +31,8 @@ import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
 numberDigitLimit :: Int
 numberDigitLimit = 200000
 
+newtype ResultPtr = ResultPtr { unresPtr :: ForeignPtr () }
+
 data Header = Header {
     hdrCurrentState :: !CInt
   , hdrStateData    :: !CInt
@@ -62,9 +64,9 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
-peekResult :: Int -> ForeignPtr () -> (LexResultType, Int, Int, Int)
+peekResult :: Int -> ResultPtr -> (LexResultType, Int, Int, Int)
 peekResult n fptr = unsafeDupablePerformIO $
-  withForeignPtr fptr $ \ptr -> do
+  withForeignPtr (unresPtr fptr) $ \ptr -> do
     rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
     if | rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket || rtype == resNull ->
           return (rtype, 0, 0, 0)
@@ -83,7 +85,7 @@ peekResult n fptr = unsafeDupablePerformIO $
 
 foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
-callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ForeignPtr ()))
+callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ResultPtr))
 callLex bs hdr = unsafeDupablePerformIO $
   alloca $ \hdrptr -> do
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
@@ -95,7 +97,7 @@ callLex bs hdr = unsafeDupablePerformIO $
 
     hdrres <- peek hdrptr
     let !rescount = fromIntegral (hdrResultNum hdrres)
-        results = (rescount, rescount, resptr)
+        results = (rescount, rescount, ResultPtr resptr)
     return (res, hdrres, results)
 
 substr :: Int -> Int -> BS.ByteString -> BS.ByteString
@@ -154,7 +156,7 @@ parseNumber tnumber = do
         dchr = BSW.head txt
 
 
-parseResults :: TempData -> (CInt, Header, (Int, Int, ForeignPtr ())) -> TokenResult
+parseResults :: TempData -> (CInt, Header, (Int, Int, ResultPtr)) -> TokenResult
 parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results) = parse results
   where
     newtemp = TempData bs hdr (err /= 0)
