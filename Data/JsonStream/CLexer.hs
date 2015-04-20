@@ -70,17 +70,10 @@ peekResult :: Int -> ResultPtr -> (LexResultType, Int, Int, Int)
 peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr -> do
     rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
-    if | rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket || rtype == resNull ->
-          return (rtype, 0, 0, 0)
-       | rtype == resCloseBrace || rtype == resCloseBracket -> do
-          rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
-          rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
-          return (rtype, fromIntegral rpos, fromIntegral rlen, 0)
-       | otherwise -> do
-          rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
-          rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
-          rdata <- peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt
-          return (rtype, fromIntegral rpos, fromIntegral rlen, fromIntegral rdata)
+    rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
+    rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
+    rdata <- peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt
+    return (rtype, fromIntegral rpos, fromIntegral rlen, fromIntegral rdata)
   where
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
@@ -183,13 +176,12 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
         | resType == resCloseBrace -> PartialResult (ObjectEnd context) next
         | resType == resCloseBracket -> PartialResult (ArrayEnd context) next
         -- Number optimized - integer
-        | resType == resNumberSmall && resLength == 0 ->
-              PartialResult (JInteger resAddData) next
-        -- Number optimized - floating
         | resType == resNumberSmall ->
-              PartialResult
-                (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * resLength)))
-                next
+            if | resLength == 0 ->  PartialResult (JInteger resAddData) next
+               | otherwise -> PartialResult
+                               (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * resLength)))
+                               next
+        -- Number optimized - floating
         | resType == resNumber ->
             if | resAddData == 0 -> -- Single one-part number
                     case parseNumber textSection of
