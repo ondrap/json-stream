@@ -34,6 +34,7 @@ numberDigitLimit = 200000
 
 newtype ResultPtr = ResultPtr { unresPtr :: ForeignPtr () }
 
+-- | Header for the C routing for batch parsing
 data Header = Header {
     hdrCurrentState :: !CInt
   , hdrStateData    :: !CInt
@@ -65,7 +66,7 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
-
+-- | Look at the n-th result in the ResultPtr array of results
 peekResult :: Int -> ResultPtr -> (LexResultType, Int, Int, Int)
 peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr -> do
@@ -80,7 +81,8 @@ peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe
 
 foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
-callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ResultPtr))
+-- Call the C lexer. Returns (Error code, Header, (result_count, result_count, ResultPointer))
+callLex :: BS.ByteString -> Header -> (CInt, Header, Int, ResultPtr)
 callLex bs hdr = unsafeDupablePerformIO $ -- Using Dupable PerformIO should be safe - at the worst is is executed twice
   alloca $ \hdrptr -> do
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
@@ -92,9 +94,9 @@ callLex bs hdr = unsafeDupablePerformIO $ -- Using Dupable PerformIO should be s
 
     hdrres <- peek hdrptr
     let !rescount = fromIntegral (hdrResultNum hdrres)
-        results = (rescount, rescount, ResultPtr resptr)
-    return (res, hdrres, results)
+    return (res, hdrres, rescount, ResultPtr resptr)
 
+{-# INLINE substr #-}
 substr :: Int -> Int -> BS.ByteString -> BS.ByteString
 substr start len = BS.take len . BS.drop start
 
@@ -105,6 +107,7 @@ data TempData = TempData {
   , tmpNumbers :: [BS.ByteString]
 }
 
+-- | Parse number from bytestring to Scientific using JSON syntax rules
 parseNumber :: BS.ByteString -> Maybe Scientific
 parseNumber tnumber = do
     let
@@ -142,7 +145,6 @@ parseNumber tnumber = do
       | BS.null txt = ((0, 0), txt)
       | otherwise = parseNum txt (0,0)
 
-    -- parseNum :: BS.ByteString -> (Integer, Int) -> ((Integer, Int), BS.ByteString)
     parseNum txt (!start, !digits)
       | BS.null txt = ((start, digits), txt)
       | dchr >= 48 && dchr <= 57 = parseNum (BS.tail txt) (start * 10 + fromIntegral (dchr - 48), digits + 1)
@@ -150,16 +152,17 @@ parseNumber tnumber = do
       where
         dchr = BSW.head txt
 
-
-parseResults :: TempData -> (CInt, Header, (Int, Int, ResultPtr)) -> TokenResult
-parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results) = parse results
+-- | Parse particular result
+parseResults :: TempData -> (CInt, Header, Int, ResultPtr) -> TokenResult
+parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescount, resptr) = parse 0
   where
     newtemp = TempData bs hdr (err /= 0)
     -- We iterate the items from CNT to 1, 1 is the last element, CNT is the first
-    parse (0, _, _) = getNextResult (newtemp tmpNumbers)
-    parse (n, cnt, ptr) =
-      let (resType, resStartPos, resLength, resAddData) = peekResult (cnt - n) ptr
-          next = parse (n-1, cnt, ptr)
+    parse n
+      | n >= rescount = getNextResult (newtemp tmpNumbers)
+      | otherwise =
+      let (resType, resStartPos, resLength, resAddData) = peekResult n resptr
+          next = parse (n + 1)
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs
       in case () of
