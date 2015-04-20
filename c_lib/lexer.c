@@ -269,7 +269,7 @@ int handle_specchar(const char *input, struct lexer *lexer)
   return LEX_OK;
 }
 
-int lexit(const char *input, struct lexer *lexer, struct lexer_result *result)
+int lex_json(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
   lexer->result = result;
   int res = LEX_OK;

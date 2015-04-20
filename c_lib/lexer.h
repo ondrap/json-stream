@@ -54,7 +54,7 @@ struct lexer {
 #define LEX_YIELD  1
 #define LEX_ERROR  2
 
-extern int lexit(const char *input, struct lexer *lexer, struct lexer_result *result);
+extern int lex_json(const char *input, struct lexer *lexer, struct lexer_result *result);
 
 
 #endif

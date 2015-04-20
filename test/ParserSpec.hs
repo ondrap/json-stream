@@ -221,7 +221,7 @@ errTests = describe "Tests of previous errors" $ do
   it "binds correctly convenience operators" $ do
     let test1 = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}, {\"name\": \"test4\", \"value\": true}]"
         parser = arrayOf $ (,) <$> "name" .: string
-                               <*> "value" .:? integer .!= (-1)
+                               <*> "value" .: integer .| (-1)
         res = parse parser test1 :: [(T.Text, Int)]
     res `shouldBe` [("test1",1),("test2",-1),("test3",-1),("test4",-1)]
 
@@ -230,11 +230,17 @@ errTests = describe "Tests of previous errors" $ do
         parser = "key" .: 0 .! "key2" .: integer
         res = parse parser test1 :: [Int]
     res `shouldBe` [13]
-  it "binds correctly .!= at the last moment" $ do
+  it "binds correctly .| at the last moment" $ do
     let test1 = "{\"key3\":{}}"
-        parser = "key" .: "key2" .:? integer .!= 2
+        parser = "key-none" .: "key2" .: integer .| 2
         res = parse parser test1 :: [Int]
-    res `shouldBe` []
+    res `shouldBe` [2]
+  it "binds correct .| 2" $ do
+    let test1 = "{\"key3\":{\"key2\": null}}"
+        parser = "key-none" .: "key2" .: integer .| 2
+        res = parse parser test1 :: [Int]
+    res `shouldBe` [2]
+
 
 
 aeCompare :: Spec

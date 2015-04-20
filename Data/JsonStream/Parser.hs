@@ -50,10 +50,10 @@ module Data.JsonStream.Parser (
   , real
   , bool
   , jNull
-    -- * Convenience aeson-like operators
+    -- * Structure operators
   , (.:)
   , (.:?)
-  , (.!=)
+  , (.|)
   , (.!)
     -- * Structure parsers
   , objectWithKey
@@ -74,7 +74,6 @@ import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
-import           Data.Maybe                  (fromMaybe)
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
@@ -495,12 +494,12 @@ infixr 7 .:
 key .:? val = Just <$> key .: val >^> pure Nothing
 infixr 7 .:?
 
--- | Converts 'Maybe' parser into normal one by providing default value instead of 'Nothing'.
+-- | Return default value if the parsers on the left hand didn't produce a result.
 --
--- > nullval .!= defval = fromMaybe defval <$> nullval
-(.!=) :: Parser (Maybe a) -> a -> Parser a
-nullval .!= defval = fromMaybe defval <$> nullval
-infixl 6 .!=
+-- > p .| defval = p >^> pure defval
+(.|) :: Parser a -> a -> Parser a
+p .| defval = p >^> pure defval
+infixl 6 .|
 
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.

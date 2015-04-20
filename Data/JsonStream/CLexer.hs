@@ -81,7 +81,7 @@ peekResult n fptr = unsafeDupablePerformIO $
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
 
-foreign import ccall unsafe "lexit" lexit :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
+foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
 callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ForeignPtr ()))
 callLex bs hdr = unsafeDupablePerformIO $
@@ -91,7 +91,7 @@ callLex bs hdr = unsafeDupablePerformIO $
     bsptr <- unsafeUseAsCString bs return
     resptr <- mallocForeignPtrBytes (resultLimit * sizeOf (undefined :: CInt) * 4)
     res <- withForeignPtr resptr $ \resptr' ->
-      lexit bsptr hdrptr resptr'
+      lexJson bsptr hdrptr resptr'
 
     hdrres <- peek hdrptr
     let !rescount = fromIntegral (hdrResultNum hdrres)
