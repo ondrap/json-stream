@@ -32,6 +32,8 @@ module Data.JsonStream.Parser (
     -- * The @Parser@ type
     Parser
   , ParseOutput(..)
+    -- * Operators
+  , (>^>)
     -- * Parsing functions
   , runParser
   , runParser'
@@ -61,7 +63,6 @@ module Data.JsonStream.Parser (
   , arrayWithIndexOf
   , indexedArrayOf
   , nullable
-  , (>^>)
     -- * Parsing modifiers
   , defaultValue
   , filterI
@@ -119,6 +120,7 @@ instance Functor Parser where
 yieldResults :: [a] -> ParseResult a -> ParseResult a
 yieldResults values end = foldr Yield end values
 
+-- | '<*>' will run both parsers in parallel and combine results
 instance Applicative Parser where
   pure x = Parser $ \tok -> process (callParse ignoreVal tok)
     where
@@ -128,7 +130,6 @@ instance Applicative Parser where
       process (MoreData (np, ntok)) = MoreData (Parser (process . callParse np), ntok)
       process _ = Failed "Internal error in pure, ignoreVal doesn't yield"
 
-  -- | Run both parsers in parallel using a shared token parser, combine results
   (<*>) m1 m2 = Parser $ \tok -> process ([], []) (callParse m1 tok) (callParse m2 tok)
     where
       process ([], _) (Done el ctx ntok) _ = Done el ctx ntok -- Optimize, return immediately when first parser fails
@@ -143,9 +144,9 @@ instance Applicative Parser where
       process _ _ _ = Failed "Unexpected error in parallel processing <*>."
 
 
+-- | '<|>' will run both parsers in parallel yielding from both as the data comes
 instance Alternative Parser where
   empty = ignoreVal
-  -- | Run both parsers in parallel using a shared token parser, yielding from both as the data comes
   (<|>) m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
     where
       process (Yield v np1) p2 = Yield v (process np1 p2)
