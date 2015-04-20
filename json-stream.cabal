@@ -4,12 +4,13 @@ synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
 
-                     The parser is compatibile with
-                     aeson and its FromJSON class. It is possible to use aeson
-                     monadic parsing when appropriate.
+                     The parser is compatibile with aeson and its FromJSON class.
+                     It is possible to use aeson monadic parsing when appropriate.
 
-                     The parser supports constant-space incremental parsing
-                     with performance comparable to aeson.
+                     The parser supports constant-space safe incremental parsing regardless
+                     of the input data. In addition to performance-critical parts written in C,
+                     a lot of performance is gained by being less memory intensive especially
+                     when used for stream parsing.
 
 homepage:            https://github.com/ondrap/json-stream
 license:             BSD3

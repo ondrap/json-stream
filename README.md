@@ -52,7 +52,7 @@ and the value is *false*. If the value is *true*, we want the parser to return a
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
 resultParser =    const [] <$> filterI not ("errors" .: value)
-              <|> toList ("items" .: arrayOf bulkItemError)
+              >^> toList ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)
 bulkItemError = objectValues $
@@ -63,15 +63,35 @@ bulkItemError = objectValues $
     statusError s = s < 200 || s > (299 :: Int)
 
 ```
+## Performance
+
+Json-stream is fast. The crude lexing is done by a C-optimized code in batches, the
+lexed pieces are then parsed using the user-specified parser. Compared to aeson, parsing
+can be easily twice as fast, especially on larger structures.
+Json-stream is in streaming mode much friendlier to the GC,
+which makes the performance difference even bigger; however even when json-stream is used
+as an aeson replacement (`value` parser), there can be a performance gain.
+
+Using json-stream parser instead of aeson `value` evades the need to build the structure
+using aeson `Value` and then converting it to the user-requested structure. Instead
+the structure is built on the fly directly during the parsing phase.
+
+Json-stream can optimize certain scenarios. If not all data from the input stream is
+required, it is skipped by the parsers. If the input JSON contains large string
+values (bigger then chunk size), they can be extracted directly using
+`bytestring` parser while avoiding the utf8 conversion. Using `integer` parser
+with bounded integer types (not `Integer`) avoids converting all numbers to
+`Scientific` type.
+
 ## Constant space parsing
 
-If the matching grammar follows certain rules and the input chunks have limited size,
+If the matching parser follows certain rules and the input chunks have limited size,
 the parsing should run in constant space. If you have a large JSON structure but need
 only small pieces, the parsing can be very fast - when the data does not match what
 is expected, it is parsed only by the lexical parser and ignored. The object key
 length is limited to 64K, maximum length of a string can be limited with `safeString`
 parser. The number of digits in a number is limited to 200.000, longer number will
-make the parser fail. 
+make the parser fail.
 
 ## Examples
 

@@ -118,7 +118,15 @@ instance Functor Parser where
 yieldResults :: [a] -> ParseResult a -> ParseResult a
 yieldResults values end = foldr Yield end values
 
--- | '<*>' will run both parsers in parallel and combine results
+-- | '<*>' will run both parsers in parallel and combine results. It
+-- behaves as a list functor (produces all combinations), but the typical
+-- use is:
+--
+-- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
+-- > >>> let parser = arrayOf $ (,) <$> "name" .: string
+-- >                                <*> "age"  .: integer
+-- > >>> parseByteString parser text :: [(Text,Int)]
+-- > [("John",20),("Frank",30)]
 instance Applicative Parser where
   pure x = Parser $ \tok -> process (callParse ignoreVal tok)
     where
@@ -143,6 +151,12 @@ instance Applicative Parser where
 
 
 -- | '<|>' will run both parsers in parallel yielding from both as the data comes
+--
+-- > json: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
+-- > >>> let parser = arrayOf $     "key1" .: (arrayOf value)
+-- >                            <|> "key2" .: (arrayOf value)
+-- > >>> parseByteString parser json :: [Int]
+-- > [1,2,5,6]
 instance Alternative Parser where
   empty = ignoreVal
   (<|>) m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
@@ -159,7 +173,16 @@ instance Alternative Parser where
 
 -- | Match items from the first parser, if none is matched, return items
 -- from the second parser. Constant-space if second parser returns
--- constant number of items.
+-- constant number of items. '.|' is implemented using this operator.
+--
+-- > >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
+-- > >>> let parser = arrayOf $ "key1" .: (arrayOf value) >^> "key2" .: (arrayOf value)
+-- > >>> parseByteString parser json :: [Int]
+-- > [1,2]
+-- > >>> let parser = arrayOf $ "key-non" .: (arrayOf value) >^> "key2" .: (arrayOf value)
+-- > >>> parseByteString parser json :: [Int]
+-- > [5,6]
+
 (>^>) :: Parser a -> Parser a -> Parser a
 m1 >^> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 tok)
   where
@@ -402,7 +425,11 @@ nullable valparse = Parser (moreData value')
     value' _ (JValue AE.Null) ntok = Yield Nothing (Done Nothing "" ntok)
     value' tok _ _ = callParse (Just <$> valparse) tok
 
--- | Match 'FromJSON' value.
+-- | Match 'FromJSON' value. Calls parseJSON on the parsed value.
+--
+-- > >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6]}]"
+-- > >>> parseByteString (arrayOf value) json :: [Value]
+-- > [Object fromList [("key2",Array (fromList [Number 5.0,Number 6.0])),("key1",Array (fromList [Number 1.0,Number 2.0]))]]
 value :: AE.FromJSON a => Parser a
 value = Parser $ \ntok -> loop (callParse aeValue ntok)
   where
@@ -482,7 +509,11 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
 
 --- Convenience operators
 
--- | Synonym for 'objectWithKey'. Matches key in an object.
+-- | Synonym for 'objectWithKey'. Matches key in an object. The '.:' operators can be chained.
+--
+-- > >>> let json = "{\"key1\": {\"nested-key\": 3}}"
+-- > >>> parseByteString ("key1" .: "nested-key" .: integer) json :: [Int]
+-- > [3]
 (.:) :: T.Text -> Parser a -> Parser a
 (.:) = objectWithKey
 infixr 7 .:
@@ -497,6 +528,11 @@ infixr 7 .:?
 -- | Return default value if the parsers on the left hand didn't produce a result.
 --
 -- > p .| defval = p >^> pure defval
+--
+-- The operator works on complete left side, the following statements are equal:
+--
+-- > Record <$>  "key1" .: "nested-key" .: value .| defaultValue
+-- > Record <$> (("key1" .: "nested-key" .: value) .| defaultValue)
 (.|) :: Parser a -> a -> Parser a
 p .| defval = p >^> pure defval
 infixl 6 .|
@@ -530,6 +566,12 @@ runParser :: Parser a -> ParseOutput a
 runParser parser = runParser' parser BS.empty
 
 -- | Parse a bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
+--
+-- > parseByteString (arrayOf integer) "[1,2,3,4]" :: [Int]
+-- [1,2,3,4]
+--
+-- > parseByteString (arrayOf ("name" .: string)) "[{\"name\":\"KIWI\"}, {\"name\":\"BIRD\"}]"
+-- ["KIWI","BIRD"]
 parseByteString :: Parser a -> BS.ByteString -> [a]
 parseByteString parser startdata = loop (runParser' parser startdata)
   where
@@ -614,14 +656,15 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- outer structure with json-stream and the inner objects with aeson as long as constant-space
 -- decoding is not required.
 --
--- Json-stream defines the object-access operators '.:', '.:?' and '.!=',
--- but in a slightly different albeit more natural way.
+-- Json-stream defines the object-access operators '.:', '.:?'
+-- but in a slightly different albeit more natural way. New operators are '.!' for
+-- array access and '.|' to handle missing values.
 --
 -- > -- JSON: [{"name": "test1", "value": 1}, {"name": "test2", "value": null}, {"name": "test3"}]
 -- > >>> let person = (,) <$> "name" .: string
--- > >>>                  <*> "value" .:? integer .!= (-1)
+-- > >>>                  <*> "value" .: integer .| (-1)
 -- > >>> let people = arrayOf person
--- > >>> parseByteString people (..JSON..)
+-- > >>> parseByteString people (..JSON..) :: [(Text, Int)]
 -- > [("test1",1),("test2",-1),("test3",-1)]
 
 -- $performance

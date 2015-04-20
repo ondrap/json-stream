@@ -8,6 +8,17 @@
 
 #include "lexer.h"
 
+/*
+ * Batch lexer for JSON
+ *
+ * When each handle_* function is called, 2 things hold:
+ * - at least 1 character is available in the input buffer
+ * - at least 1 result slot is free
+ *
+ *
+)
+ */
+
 static inline int isempty(char chr)
 {
   return (chr == ':' || chr == ',' || isspace(chr));
@@ -92,6 +103,7 @@ static inline int handle_ident(const char *input, struct lexer *lexer, const cha
   return LEX_OK;
 }
 
+/* Read a number; compute the number if the 'int' type can hold it */
 int handle_number(const char *input, struct lexer *lexer)
 {
   /* Just eat characters that can be numbers and feed them to a table */
@@ -140,6 +152,7 @@ int handle_number(const char *input, struct lexer *lexer)
     res->length = lexer->position - startposition;
     lexer->state_data = 1;
   } else if (!invalid) {
+    /* Optimized number generation, so that we don't have to parse it in haskell */
     res->restype = RES_NUMBER_SMALL;
     res->adddata = sign * computedNumber;
     res->length = dotDigits;
@@ -200,6 +213,7 @@ int handle_string(const char *input, struct lexer *lexer)
     return LEX_ERROR;
 }
 
+/* Handle \uxxxx syntax */
 static int handle_string_uni(const char *input, struct lexer *lexer)
 {
   char chr = input[lexer->position];
