@@ -61,6 +61,7 @@ module Data.JsonStream.Parser (
   , arrayWithIndexOf
   , indexedArrayOf
   , nullable
+  , (>^>)
     -- * Parsing modifiers
   , defaultValue
   , filterI
@@ -114,6 +115,10 @@ newtype Parser a = Parser {
 instance Functor Parser where
   fmap f (Parser p) = Parser $ \d -> fmap f (p d)
 
+-- | Yield list of results, finish with last action
+yieldResults :: [a] -> ParseResult a -> ParseResult a
+yieldResults values end = foldr Yield end values
+
 instance Applicative Parser where
   pure x = Parser $ \tok -> process (callParse ignoreVal tok)
     where
@@ -130,14 +135,12 @@ instance Applicative Parser where
       process (lst1, lst2) (Yield v np1) p2 = process (v:lst1, lst2) np1 p2
       process (lst1, lst2) p1 (Yield v np2) = process (lst1, v:lst2) p1 np2
       process (lst1, lst2) (Done el ctx ntok) (Done {}) =
-        yieldResults [ mx my | mx <- lst1, my <- lst2 ] (Done el ctx ntok)
+        yieldResults [ mx my | mx <- reverse lst1, my <- reverse lst2 ] (Done el ctx ntok)
       process lsts (MoreData (np1, ntok1)) (MoreData (np2, _)) =
         MoreData (Parser (\tok -> process lsts (callParse np1 tok) (callParse np2 tok)), ntok1)
       process _ (Failed err) _ = Failed err
       process _ _ (Failed err) = Failed err
       process _ _ _ = Failed "Unexpected error in parallel processing <*>."
-
-      yieldResults values end = foldr Yield end values
 
 
 instance Alternative Parser where
@@ -153,6 +156,32 @@ instance Alternative Parser where
       process (Failed err) _ = Failed err
       process _ (Failed err) = Failed err
       process _ _ = error "Unexpected error in parallel processing <|>"
+
+
+-- | Match items from the first parser, if none is matched, return items
+-- from the second parser. Constant-space if second parser returns
+-- constant number of items.
+(>^>) :: Parser a -> Parser a -> Parser a
+m1 >^> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 tok)
+  where
+    -- First returned item -> disable second parser
+    process _ (Yield v np1) _ = Yield v (process [] np1 Nothing)
+    -- First done with disabled second -> exit
+    process _ (Done el ctx ntok) Nothing = Done el ctx ntok
+    -- Both done but second not disabled -> yield items from the second
+    process lst (Done el ctx ntok) (Just (Done {})) = yieldResults (reverse lst) (Done el ctx ntok)
+    -- Second yield - remember data
+    process lst np1 (Just (Yield v np2)) = process (v:lst) np1 (Just np2)
+    -- Moredata processing
+    process lst (MoreData (np1, ntok)) Nothing =
+        MoreData (Parser $ \tok -> process lst (callParse np1 tok) Nothing, ntok)
+    process lst (MoreData (np1, ntok)) (Just (MoreData (np2, _))) =
+        MoreData (Parser $ \tok -> process lst (callParse np1 tok) (Just $ callParse np2 tok), ntok)
+    process _ (Failed err) _ = Failed err
+    process _ _ (Just (Failed err)) = Failed err
+    process _ _ _ = error "Unexpected error in parallel processing >^>"
+
+
 
 array' :: (Int -> Parser a) -> Parser a
 array' valparse = Parser $ \tp ->

@@ -81,13 +81,27 @@ specObjComb = describe "Object accesors" $ do
     let test = "[{'key1': [1,2], 'key2': [5,6], 'key3': [8,9]}]"
         parser = arrayOf $ (,) <$> objectWithKey "key2" (arrayOf value) <*> objectWithKey "key1" (arrayOf value)
         msg = parse parser test :: [(Int, Int)]
-    msg `shouldBe` [(6,2),(6,1),(5,2),(5,1)]
+    msg `shouldBe` [(5,1),(5,2),(6,1),(6,2)]
 
   it "<|> test 1" $ do
     let test = "[{'key1': [1,2], 'key2': [5,6], 'key3': [8,9]}]"
         parser = arrayOf $ objectWithKey "key1" (arrayOf value) <|> objectWithKey "key2" (arrayOf value)
         msg = parse parser test :: [Int]
     msg `shouldBe` [1,2,5,6]
+
+  it ">^> returns first items even if second is in previous chunk" $ do
+    let test = ["{\"error\":1, ", "\"values\":[2,3,4]}"]
+        parser =  ("values" .: arrayOf integer)
+                  >^> ("error" .: integer)
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [2,3,4]
+  it ">^> returns second item if first does not match" $ do
+    let test = ["{\"error\":1, ", "\"values\":[true,null,false]}"]
+        parser =  ("values" .: arrayOf integer)
+                  >^> ("error" .: integer)
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [1]
+
 
 specEdge :: Spec
 specEdge = describe "Edge cases" $ do
