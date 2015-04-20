@@ -181,7 +181,7 @@ m1 >^> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 
     process _ _ (Just (Failed err)) = Failed err
     process _ _ _ = error "Unexpected error in parallel processing >^>"
 
-
+infixl 3 >^>
 
 array' :: (Int -> Parser a) -> Parser a
 array' valparse = Parser $ \tp ->

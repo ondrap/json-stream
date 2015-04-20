@@ -91,13 +91,13 @@ specObjComb = describe "Object accesors" $ do
 
   it ">^> returns first items even if second is in previous chunk" $ do
     let test = ["{\"error\":1, ", "\"values\":[2,3,4]}"]
-        parser =  ("values" .: arrayOf integer)
-                  >^> ("error" .: integer)
+        parser =  "values" .: arrayOf integer
+                  >^> "error" .: integer
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [2,3,4]
   it ">^> returns second item if first does not match" $ do
     let test = ["{\"error\":1, ", "\"values\":[true,null,false]}"]
-        parser =  ("values" .: arrayOf integer)
+        parser =  "values" .: arrayOf integer
                   >^> ("error" .: integer)
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [1]
