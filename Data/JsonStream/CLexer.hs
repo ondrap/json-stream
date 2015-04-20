@@ -24,6 +24,13 @@ import           System.IO.Unsafe            (unsafeDupablePerformIO)
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
 
+-- | Limit for maximum size of a number; fail if larger number is found
+-- this is needed to make this constant-space, otherwise we would eat
+-- all memory just memoizing the number. The lexer fails if larger number
+-- is encountered.
+numberDigitLimit :: Int
+numberDigitLimit = 200000
+
 data Header = Header {
     hdrCurrentState :: !CInt
   , hdrStateData    :: !CInt
@@ -159,10 +166,10 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs
       in case () of
-        -- First part of partial number
-       _| n == 1 && resType == resNumberPartial && resAddData == 0 -> getNextResult (newtemp [textSection])
-        -- Next part of partial number
-        | n == 1 && resType == resNumberPartial -> getNextResult (newtemp (textSection:tmpNumbers))
+       _| resType == resNumberPartial ->
+            if | resAddData == 0 -> getNextResult (newtemp [textSection]) -- First part of number
+               | sum (map BS.length tmpNumbers) > numberDigitLimit ->  TokFailed -- Number too long
+               | otherwise -> getNextResult (newtemp (textSection:tmpNumbers)) -- Middle part of number
         | resType == resTrue -> PartialResult (JValue (AE.Bool True)) next
         | resType == resFalse -> PartialResult (JValue (AE.Bool False)) next
         | resType == resNull -> PartialResult (JValue AE.Null) next
@@ -179,25 +186,22 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, results
               PartialResult
                 (JValue (AE.Number $ scientific (fromIntegral resAddData) ((-1) * resLength)))
                 next
-        -- Number single
-        | resType == resNumber && resAddData == 0 ->
-            case parseNumber textSection of
-              Just num -> PartialResult (JValue (AE.Number num)) next
-              Nothing -> TokFailed
-        -- Number from parts
         | resType == resNumber ->
-            case parseNumber (BS.concat $ reverse (textSection:tmpNumbers)) of
-              Just num -> PartialResult (JValue (AE.Number num)) next
-              Nothing -> TokFailed
-        -- Single string
-        | resType == resString && resAddData == 0 ->
-            case decodeUtf8' textSection of
-              Right ctext -> PartialResult (JValue (AE.String ctext)) next
-              Left _ -> TokFailed
-        -- Final part
+            if | resAddData == 0 -> -- Single one-part number
+                    case parseNumber textSection of
+                      Just num -> PartialResult (JValue (AE.Number num)) next
+                      Nothing -> TokFailed
+               | otherwise ->  -- Concatenate number from partial parts
+                     case parseNumber (BS.concat $ reverse (textSection:tmpNumbers)) of
+                       Just num -> PartialResult (JValue (AE.Number num)) next
+                       Nothing -> TokFailed
         | resType == resString ->
-            PartialResult (StringContent textSection)
-              (PartialResult StringEnd next)
+          if | resAddData == 0 -> -- One-part string
+                case decodeUtf8' textSection of
+                  Right ctext -> PartialResult (JValue (AE.String ctext)) next
+                  Left _ -> TokFailed
+             | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
+                            (PartialResult StringEnd next)
         -- -- Unicode
         | resType == resStringUni ->
             PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum resAddData)) next

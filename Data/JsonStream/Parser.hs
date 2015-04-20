@@ -1,6 +1,6 @@
-{-# LANGUAGE BangPatterns  #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -82,10 +82,9 @@ import qualified Data.Text.Lazy              as TL
 import           Data.Text.Lazy.Encoding     (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
+import           Data.Bits                   (clearBit, setBit)
+import           Data.JsonStream.CLexer      (tokenParser)
 import           Data.JsonStream.TokenParser
-import Data.JsonStream.CLexer (tokenParser)
-import Data.Bits (setBit, clearBit)
--- import           Data.JsonStream.TokenParser
 
 
 -- | Limit for the size of an object key
@@ -227,7 +226,7 @@ object' once valparse = Parser $ moreData object''
         StringContent str
           | len > objectKeyStringLimit -> callParse (ignoreStrRestThen ignoreVal) ntok
           | otherwise -> moreData (getLongKey (str:acc) (len + BS.length str)) ntok
-        _ -> Failed "Object longstr - unexpected token."
+        _ -> Failed "Object longstr - lexer failed."
 
 -- | Helper function to deduplicate TokMoreData/FokFailed logic
 moreData :: (TokenResult -> Element -> TokenResult -> ParseResult v) -> TokenResult -> ParseResult v
@@ -235,7 +234,7 @@ moreData parser tok =
   case tok of
     PartialResult el ntok -> parser tok el ntok
     TokMoreData ntok -> MoreData (Parser (moreData parser), ntok)
-    TokFailed -> Failed "Object longstr - unexpected token."
+    TokFailed -> Failed "More data - lexer failed."
 
 -- | Match all key-value pairs of an object, return them as a tuple.
 -- If the source object defines same key multiple times, all values
@@ -430,8 +429,8 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         StringEnd -> moreData (handleTok (clearBit level 30)) ntok -- The 30s bit indicates that we are in string
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
-        _| el == ArrayBegin || el == ObjectBegin -> moreData (handleTok (level + 1)) ntok
-         | otherwise -> Failed "UnexpectedEnd "
+        ArrayBegin -> moreData (handleTok (level + 1)) ntok
+        ObjectBegin -> moreData (handleTok (level + 1)) ntok
 
 -- | Gather matches and return them as list.
 toList :: Parser a -> Parser [a]
@@ -575,6 +574,8 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- type.
 --
 -- The object key length is limited to ~64K. Object records with longer key are ignored and unparsed.
+--
+-- Numbers are limited to 200.000 digits. Longer numbers will make the parsing fail.
 --
 -- The 'toList' parser works by accumulating all matched values. Obviously, number
 -- of such values influences the amount of used memory.

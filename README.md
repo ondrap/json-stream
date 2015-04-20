@@ -70,7 +70,8 @@ the parsing should run in constant space. If you have a large JSON structure but
 only small pieces, the parsing can be very fast - when the data does not match what
 is expected, it is parsed only by the lexical parser and ignored. The object key
 length is limited to 64K, maximum length of a string can be limited with `safeString`
-parser.
+parser. The number of digits in a number is limited to 200.000, longer number will
+make the parser fail. 
 
 ## Examples
 
