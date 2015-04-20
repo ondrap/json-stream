@@ -64,7 +64,6 @@ module Data.JsonStream.Parser (
   , indexedArrayOf
   , nullable
     -- * Parsing modifiers
-  , defaultValue
   , filterI
   , takeI
   , toList
@@ -397,7 +396,7 @@ jNull = jvalue cvt (const Nothing)
     cvt (AE.Null) = Just ()
     cvt _ = Nothing
 
--- | Parses a field with a possible null value. Use 'defaultValue' for missing values.
+-- | Parses a field with a possible null value.
 nullable :: Parser a -> Parser (Maybe a)
 nullable valparse = Parser (moreData value')
   where
@@ -482,16 +481,6 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
       | cond v = Yield v (loop np)
       | otherwise = loop np
 
--- | Returns a value if none is found upstream.
-defaultValue :: a -> Parser a -> Parser a
-defaultValue defvalue valparse = Parser $ \ntok -> loop False (callParse valparse ntok)
-  where
-    loop False (Done Nothing ctx ntp) = Yield defvalue (Done Nothing ctx ntp)
-    loop _ (Done el ctx ntp) = Done el ctx ntp
-    loop _ (Failed err) = Failed err
-    loop found (MoreData (Parser np, ntok)) = MoreData (Parser (loop found . np), ntok)
-    loop _ (Yield v np) = Yield v (loop True np)
-
 --- Convenience operators
 
 -- | Synonym for 'objectWithKey'. Matches key in an object.
@@ -501,9 +490,9 @@ infixr 7 .:
 
 -- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
 --
--- > key .:? val = defaultValue Nothing (key .: nullable val)
+-- > key .:? val = Just <$> key .: val >^> pure Nothing
 (.:?) :: T.Text -> Parser a -> Parser (Maybe a)
-key .:? val = defaultValue Nothing (key .: nullable val)
+key .:? val = Just <$> key .: val >^> pure Nothing
 infixr 7 .:?
 
 -- | Converts 'Maybe' parser into normal one by providing default value instead of 'Nothing'.

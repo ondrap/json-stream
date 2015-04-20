@@ -165,13 +165,6 @@ specControl :: Spec
 specControl = describe "Control parser" $ do
   -- it "toList" $ do
   -- it "fileterI" $ do
-  it "defaultValue" $ do
-    let test = "[{\"key1\":\"value1\", \"key2\":\"value2\"}, {\"key1\":\"test\"}, {}]"
-        parser = arrayOf $ (,) <$> defaultValue "default-key1" (objectWithKey "key1" value)
-                             <*> defaultValue "default-key2" (objectWithKey "key2" value)
-        res = parse parser test :: [(T.Text, T.Text)]
-    res `shouldBe` [("value1","value2"),("test","default-key2"),("default-key1","default-key2")]
-
   it "takeI limits number of values" $ do
     let test = "[[1,2,3], [4,5,6]]"
         parser = arrayOf $ takeI 2 $ arrayOf integer
