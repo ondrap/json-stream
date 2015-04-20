@@ -17,6 +17,7 @@ import           Data.ByteString.Unsafe      (unsafeUseAsCString)
 import           Data.Scientific             (Scientific, scientific)
 import qualified Data.Text                   as T
 import           Data.Text.Encoding          (decodeUtf8', encodeUtf8)
+import           Data.Text.Internal.Unsafe   (inlinePerformIO)
 import           Foreign
 import           Foreign.C.Types
 import           System.IO.Unsafe            (unsafeDupablePerformIO)
@@ -64,8 +65,9 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
+
 peekResult :: Int -> ResultPtr -> (LexResultType, Int, Int, Int)
-peekResult n fptr = unsafeDupablePerformIO $
+peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr -> do
     rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
     if | rtype == resTrue || rtype == resFalse || rtype == resOpenBrace || rtype == resOpenBracket || rtype == resNull ->
@@ -86,7 +88,7 @@ peekResult n fptr = unsafeDupablePerformIO $
 foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
 callLex :: BS.ByteString -> Header -> (CInt, Header, (Int, Int, ResultPtr))
-callLex bs hdr = unsafeDupablePerformIO $
+callLex bs hdr = unsafeDupablePerformIO $ -- Using Dupable PerformIO should be safe - at the worst is is executed twice
   alloca $ \hdrptr -> do
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
 
