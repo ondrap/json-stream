@@ -339,7 +339,7 @@ number = jvalue cvt (Just . fromIntegral)
     cvt _ = Nothing
 
 -- | Parse to integer type. If you are using integer numbers, use this parser.
--- It skips the conversion JSON-> 'Scientific' -> Int and uses an Int directly.
+-- It skips the conversion JSON -> 'Scientific' -> 'Int' and uses an 'Int' directly.
 integer :: (Integral i, Bounded i) => Parser i
 integer = jvalue cvt (Just . fromIntegral)
   where

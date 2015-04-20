@@ -20,7 +20,7 @@ which allows to parse only those parts of JSON that are of interest while skippi
 The parsing process uses the least amount of memory possible and is completely lazy. It does not perfectly
 check for JSON syntax and the behaviour on incorrect JSON input is undefined (it cheats quite a lot;
 but this is needed for constant-space parsing). **The result on badly formed input is undefined,
-the parser is not guaranteed to fail on bad input.**
+the parser does not guarantee failing on bad input.**
 
 - The parser generally does not fail. If the data does not match, the parser silently ignores it.
   The failures should be only syntax errors in JSON.
