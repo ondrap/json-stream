@@ -430,6 +430,9 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
         AE.Success res -> Yield res (loop np)
 
 -- | Take maximum n matching items.
+--
+-- > >>> parseByteString (takeI 3 $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
+-- > [1,2,3]
 takeI :: Int -> Parser a -> Parser a
 takeI num valparse = Parser $ \tok -> loop num (callParse valparse tok)
   where
@@ -490,7 +493,10 @@ toList f = Parser $ \ntok -> loop [] (callParse f ntok)
     loop acc (Yield v np) = loop (v:acc) np
     loop _ (Failed err) = Failed err
 
--- | Let only items matching a condition pass
+-- | Let only items matching a condition pass.
+--
+-- > >>> parseByteString (filterI (>5) $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
+-- > [6,7,8,9]
 filterI :: (a -> Bool) -> Parser a -> Parser a
 filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
   where
