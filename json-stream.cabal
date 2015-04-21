@@ -30,6 +30,7 @@ library
   exposed-modules:     Data.JsonStream.Parser
   other-modules:       Data.JsonStream.TokenParser, Data.JsonStream.CLexType, Data.JsonStream.CLexer
   c-sources:           c_lib/lexer.c
+  includes:            c_lib/lexer.h
   include-dirs:        c_lib
   build-depends:         base >=4.7 && <4.8
                        , bytestring
