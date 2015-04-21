@@ -1,5 +1,5 @@
 name:                json-stream
-version:             0.3.0.1
+version:             0.3.0.2
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
@@ -20,6 +20,7 @@ maintainer:          palkovsky.ondrej@gmail.com
 category:            Text, JSON
 build-type:          Simple
 cabal-version:       >=1.10
+extra-source-files:  c_lib/lexer.h
 
 source-repository head
   type: git
