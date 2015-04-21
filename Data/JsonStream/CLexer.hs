@@ -66,30 +66,13 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
-peekResultPos :: Int -> ResultPtr -> Int
-peekResultPos n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+peekResultField :: Int -> Int -> ResultPtr -> Int
+peekResultField n fieldno fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (recsize * n + isize) :: IO CInt)
+    fromIntegral <$> (peekByteOff ptr (recsize * n + fieldno * isize) :: IO CInt)
   where
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
-
-peekResultLen :: Int -> ResultPtr -> Int
-peekResultLen n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt)
-  where
-    isize = sizeOf (undefined :: CInt)
-    recsize = isize * 4
-
-peekResultData :: Int -> ResultPtr -> Int
-peekResultData n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt)
-  where
-    isize = sizeOf (undefined :: CInt)
-    recsize = isize * 4
-
 
 peekResultType :: Int -> ResultPtr -> LexResultType
 peekResultType n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
@@ -182,9 +165,9 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
       | n >= rescount = getNextResult (newtemp tmpNumbers)
       | otherwise =
       let resType = peekResultType n resptr
-          resStartPos = peekResultPos n resptr
-          resLength = peekResultLen n resptr
-          resAddData = peekResultData n resptr
+          resStartPos = peekResultField n 1 resptr
+          resLength = peekResultField n 2 resptr
+          resAddData = peekResultField n 3 resptr
           next = parse (n + 1)
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs
