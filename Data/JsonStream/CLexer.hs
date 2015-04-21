@@ -66,15 +66,35 @@ instance Storable Header where
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
 
--- | Look at the n-th result in the ResultPtr array of results
-peekResult :: Int -> ResultPtr -> (LexResultType, Int, Int, Int)
-peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr -> do
-    rtype <- LexResultType <$> peekByteOff ptr (recsize * n)
-    rpos <- peekByteOff ptr (recsize * n + isize) :: IO CInt
-    rlen <- peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt
-    rdata <- peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt
-    return (rtype, fromIntegral rpos, fromIntegral rlen, fromIntegral rdata)
+peekResultPos :: Int -> ResultPtr -> Int
+peekResultPos n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr ->
+    fromIntegral <$> (peekByteOff ptr (recsize * n + isize) :: IO CInt)
+  where
+    isize = sizeOf (undefined :: CInt)
+    recsize = isize * 4
+
+peekResultLen :: Int -> ResultPtr -> Int
+peekResultLen n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr ->
+    fromIntegral <$> (peekByteOff ptr (recsize * n + 2 * isize) :: IO CInt)
+  where
+    isize = sizeOf (undefined :: CInt)
+    recsize = isize * 4
+
+peekResultData :: Int -> ResultPtr -> Int
+peekResultData n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr ->
+    fromIntegral <$> (peekByteOff ptr (recsize * n + 3 * isize) :: IO CInt)
+  where
+    isize = sizeOf (undefined :: CInt)
+    recsize = isize * 4
+
+
+peekResultType :: Int -> ResultPtr -> LexResultType
+peekResultType n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr ->
+    LexResultType <$> peekByteOff ptr (recsize * n)
   where
     isize = sizeOf (undefined :: CInt)
     recsize = isize * 4
@@ -161,7 +181,10 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
     parse n
       | n >= rescount = getNextResult (newtemp tmpNumbers)
       | otherwise =
-      let (resType, resStartPos, resLength, resAddData) = peekResult n resptr
+      let resType = peekResultType n resptr
+          resStartPos = peekResultPos n resptr
+          resLength = peekResultLen n resptr
+          resAddData = peekResultData n resptr
           next = parse (n + 1)
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs
