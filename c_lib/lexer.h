@@ -46,7 +46,6 @@ struct lexer {
 
   int result_num;
   int result_limit;
-  struct lexer_result *result;
 };
 
 #define LEX_OK     0

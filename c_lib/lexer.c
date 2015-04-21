@@ -30,9 +30,9 @@ static inline int isJnumber(char chr)
 }
 
 // Add simple result to the result list
-static inline void add_simple_res(int restype, struct lexer *lexer, int length)
+static inline void add_simple_res(int restype, struct lexer *lexer, int length, struct lexer_result *result)
 {
-  struct lexer_result *res = &lexer->result[lexer->result_num];
+  struct lexer_result *res = &result[lexer->result_num];
 
   res->restype = restype;
   res->startpos = lexer->position;
@@ -52,17 +52,17 @@ static inline int handle_space(const char *input, struct lexer *lexer)
   return LEX_OK;
 }
 
-static inline int handle_base(const char *input, struct lexer *lexer)
+static inline int handle_base(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
   if (handle_space(input, lexer))
     return LEX_OK;
 
   char chr = input[lexer->position];
   switch (chr) {
-    case '{': add_simple_res(RES_OPEN_BRACE, lexer, 1); lexer->position++;break;
-    case '}': add_simple_res(RES_CLOSE_BRACE, lexer, 1); lexer->position++;break;
-    case '[': add_simple_res(RES_OPEN_BRACKET, lexer, 1); lexer->position++;break;
-    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer, 1); lexer->position++;break;
+    case '{': add_simple_res(RES_OPEN_BRACE, lexer, 1, result); lexer->position++;break;
+    case '}': add_simple_res(RES_CLOSE_BRACE, lexer, 1, result); lexer->position++;break;
+    case '[': add_simple_res(RES_OPEN_BRACKET, lexer, 1, result); lexer->position++;break;
+    case ']': add_simple_res(RES_CLOSE_BRACKET, lexer, 1, result); lexer->position++;break;
     case '"': lexer->current_state = STATE_STRING; lexer->state_data = 0; lexer->position++;return LEX_OK;
     case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
@@ -80,14 +80,15 @@ static inline int handle_base(const char *input, struct lexer *lexer)
   return LEX_OK;
 }
 
-static inline int handle_ident(const char *input, struct lexer *lexer, const char *ident, int idtype)
+static inline int handle_ident(const char *input, struct lexer *lexer, const char *ident, int idtype,
+                               struct lexer_result *result)
 {
   while (lexer->position < lexer->length) {
     char chr = input[lexer->position];
     if (!ident[lexer->state_data]) {
       // Check that the next character is allowed
       if (isempty(chr) || chr == ']' || chr == '}') {
-        add_simple_res(idtype, lexer, lexer->state_data);
+        add_simple_res(idtype, lexer, lexer->state_data, result);
         lexer->current_state = STATE_BASE;
         return LEX_OK;
       } else {
@@ -104,7 +105,7 @@ static inline int handle_ident(const char *input, struct lexer *lexer, const cha
 }
 
 /* Read a number; compute the number if the 'int' type can hold it */
-int handle_number(const char *input, struct lexer *lexer)
+int handle_number(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
   /* Just eat characters that can be numbers and feed them to a table */
   // Copy the character to buffer
@@ -143,7 +144,7 @@ int handle_number(const char *input, struct lexer *lexer)
         }
      }
 
-  struct lexer_result *res = &lexer->result[lexer->result_num];
+  struct lexer_result *res = &result[lexer->result_num];
   res->adddata = lexer->state_data;
   if (lexer->position == lexer->length) {
     res->restype = RES_NUMBER_PARTIAL;
@@ -176,14 +177,14 @@ static inline int safechar(char x) {
 }
 
 /* Handle beginning of a string, the '"' is already stripped */
-int handle_string(const char *input, struct lexer *lexer)
+int handle_string(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
     int startposition = lexer->position;
     char ch;
     for (ch=input[lexer->position]; lexer->position < lexer->length && safechar(ch); ch = input[++lexer->position])
       ;
 
-    struct lexer_result *res = &lexer->result[lexer->result_num];
+    struct lexer_result *res = &result[lexer->result_num];
     res->startpos = startposition;
     res->length = lexer->position - startposition;
     if (lexer->position == lexer->length || input[lexer->position] == '\\') {
@@ -214,7 +215,7 @@ int handle_string(const char *input, struct lexer *lexer)
 }
 
 /* Handle \uxxxx syntax */
-static int handle_string_uni(const char *input, struct lexer *lexer)
+static int handle_string_uni(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
   char chr = input[lexer->position];
   lexer->state_data_2 *= 16;
@@ -230,7 +231,7 @@ static int handle_string_uni(const char *input, struct lexer *lexer)
   lexer->position += 1;
   if (lexer->state_data == 4) {
       // Emit the result
-      struct lexer_result *res = &lexer->result[lexer->result_num];
+      struct lexer_result *res = &result[lexer->result_num];
       res->startpos = lexer->position;
       res->length = 0;
       res->restype = RES_STRING_UNI;
@@ -244,9 +245,9 @@ static int handle_string_uni(const char *input, struct lexer *lexer)
 }
 
 // Add a character to result, move position forward, change state back to string
-static inline void emitchar(char ch, struct lexer *lexer)
+static inline void emitchar(char ch, struct lexer *lexer, struct lexer_result *result)
 {
-  struct lexer_result *res = &lexer->result[lexer->result_num];
+  struct lexer_result *res = &result[lexer->result_num];
 
   res->restype = RES_STRING_PARTIAL;
   res->startpos = lexer->position;
@@ -259,18 +260,18 @@ static inline void emitchar(char ch, struct lexer *lexer)
   lexer->state_data = 1; // Set the string is in partial data
 }
 
-int handle_specchar(const char *input, struct lexer *lexer)
+int handle_specchar(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
   char chr = input[lexer->position];
   switch (chr) {
-    case '"': emitchar('"', lexer);break;
-    case '\\':emitchar('\\', lexer);break;
-    case '/':emitchar('/', lexer);break;
-    case 'b':emitchar('\b', lexer);break;
-    case 'f':emitchar('\f', lexer);break;
-    case 'n':emitchar('\n', lexer);break;
-    case 'r':emitchar('\r', lexer);break;
-    case 't':emitchar('\t', lexer);break;
+    case '"': emitchar('"', lexer, result);break;
+    case '\\':emitchar('\\', lexer, result);break;
+    case '/':emitchar('/', lexer, result);break;
+    case 'b':emitchar('\b', lexer, result);break;
+    case 'f':emitchar('\f', lexer, result);break;
+    case 'n':emitchar('\n', lexer, result);break;
+    case 'r':emitchar('\r', lexer, result);break;
+    case 't':emitchar('\t', lexer, result);break;
     case 'u':
       lexer->current_state = STATE_STRING_UNI;
       lexer->state_data = 0;
@@ -285,7 +286,6 @@ int handle_specchar(const char *input, struct lexer *lexer)
 
 int lex_json(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
-  lexer->result = result;
   int res = LEX_OK;
   static void* dispatch_table[] = {
       &&state_base, &&state_string, &&state_number, &&state_true,
@@ -300,28 +300,28 @@ int lex_json(const char *input, struct lexer *lexer, struct lexer_result *result
 
   DISPATCH();
   state_base:
-    res = handle_base(input, lexer);
+    res = handle_base(input, lexer, result);
     DISPATCH();
   state_string:
-    res = handle_string(input, lexer);
+    res = handle_string(input, lexer, result);
     DISPATCH();
   state_number:
-    res = handle_number(input, lexer);
+    res = handle_number(input, lexer, result);
     DISPATCH();
   state_true:
-    res = handle_ident(input, lexer, "true", RES_TRUE);
+    res = handle_ident(input, lexer, "true", RES_TRUE, result);
     DISPATCH();
   state_false:
-    res = handle_ident(input, lexer, "false", RES_FALSE);
+    res = handle_ident(input, lexer, "false", RES_FALSE, result);
     DISPATCH();
   state_null:
-    res = handle_ident(input, lexer, "null", RES_NULL);
+    res = handle_ident(input, lexer, "null", RES_NULL, result);
     DISPATCH();
   state_string_specchar:
-    res = handle_specchar(input, lexer);
+    res = handle_specchar(input, lexer, result);
     DISPATCH();
   state_string_uni:
-    res = handle_string_uni(input, lexer);
+    res = handle_string_uni(input, lexer, result);
     DISPATCH();
 
   return res;

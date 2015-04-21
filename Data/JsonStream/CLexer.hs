@@ -50,7 +50,7 @@ defHeader :: Header
 defHeader = Header 0 0 0 0 0 0 0
 
 instance Storable Header where
-  sizeOf _ = 8 * sizeOf (undefined :: CInt)
+  sizeOf _ = 7 * sizeOf (undefined :: CInt)
   alignment _ = sizeOf (undefined :: CInt)
   peek ptr = do
     state <- peekByteOff ptr 0
