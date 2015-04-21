@@ -43,10 +43,14 @@ data Header = Header {
   , hdrPosition     :: !CInt
   , hdrLength       :: !CInt
   , hdrResultNum    :: !CInt
+  , hdrResultLimit  :: !CInt
 } deriving (Show)
 
+defHeader :: Header
+defHeader = Header 0 0 0 0 0 0 0
+
 instance Storable Header where
-  sizeOf _ = 7 * sizeOf (undefined :: CInt)
+  sizeOf _ = 8 * sizeOf (undefined :: CInt)
   alignment _ = sizeOf (undefined :: CInt)
   peek ptr = do
     state <- peekByteOff ptr 0
@@ -55,8 +59,8 @@ instance Storable Header where
     position <- peekByteOff ptr (3 * sizeOf state)
     slength <- peekByteOff ptr (4 * sizeOf state)
     sresultnum <- peekByteOff ptr (5 * sizeOf state)
-    return $ Header state sdata1  sdata2  position  slength sresultnum
-    -- return $ Header state sdata1 sdata2 position slength sresultnum
+    sresultlimit <- peekByteOff ptr (6 * sizeOf state)
+    return $ Header state sdata1  sdata2  position  slength sresultnum sresultlimit
 
   poke ptr (Header {..}) = do
     pokeByteOff ptr 0 hdrCurrentState
@@ -65,6 +69,7 @@ instance Storable Header where
     pokeByteOff ptr (3 * sizeOf hdrCurrentState) hdrPosition
     pokeByteOff ptr (4 * sizeOf hdrCurrentState) hdrLength
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
+    pokeByteOff ptr (6 * sizeOf hdrCurrentState) hdrResultLimit
 
 peekResultField :: Int -> Int -> ResultPtr -> Int
 peekResultField n fieldno fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
@@ -91,7 +96,7 @@ callLex bs hdr = unsafeDupablePerformIO $ -- Using Dupable PerformIO should be s
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
 
     bsptr <- unsafeUseAsCString bs return
-    resptr <- mallocForeignPtrBytes (resultLimit * sizeOf (undefined :: CInt) * 4)
+    resptr <- mallocForeignPtrBytes (fromIntegral (hdrResultLimit hdr) * sizeOf (undefined :: CInt) * 4)
     res <- withForeignPtr resptr $ \resptr' ->
       lexJson bsptr hdrptr resptr'
 
@@ -212,10 +217,14 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
             PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum resAddData)) next
         -- -- Partial string, not the end
         | resType == resStringPartial ->
-            if resLength == 0
+            if resLength == -1
               then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) next -- \n\r..
               else PartialResult (StringContent textSection) next -- normal string section
         | otherwise -> error "Unsupported"
+
+-- | Estimate number of elements in a chunk
+estResultLimit :: BS.ByteString -> CInt
+estResultLimit dta = fromIntegral $ 1 + BS.length dta `div` 5
 
 getNextResult :: TempData -> TokenResult
 getNextResult tmp@(TempData {..})
@@ -223,7 +232,7 @@ getNextResult tmp@(TempData {..})
   | hdrPosition tmpHeader < hdrLength tmpHeader = parseResults tmp (callLex tmpBuffer tmpHeader)
   | otherwise = TokMoreData newdata
   where
-    newdata dta = parseResults newtmp (callLex dta newhdr)
+    newdata dta = parseResults newtmp (callLex dta newhdr{hdrResultLimit=estResultLimit dta})
       where
         newtmp = tmp{tmpBuffer=dta}
         newhdr = tmpHeader{hdrPosition=0, hdrLength=fromIntegral $ BS.length dta}
@@ -232,4 +241,4 @@ getNextResult tmp@(TempData {..})
 tokenParser :: BS.ByteString -> TokenResult
 tokenParser dta = getNextResult (TempData dta newhdr False [])
   where
-    newhdr = Header 0 0 0 0 (fromIntegral $ BS.length dta) 0
+    newhdr = defHeader{hdrLength=fromIntegral (BS.length dta), hdrResultLimit=(estResultLimit dta)}

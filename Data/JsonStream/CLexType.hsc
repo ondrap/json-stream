@@ -8,9 +8,6 @@ newtype LexResultType = LexResultType CInt deriving (Show, Eq, Storable)
 
 #include "lexer.h"
 
-resultLimit       :: Int
-resultLimit       =  #const RESULT_COUNT
-
 #{enum LexResultType, LexResultType
   , resNumber = RES_NUMBER
   , resString = RES_STRING

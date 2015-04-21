@@ -17,8 +17,6 @@
 #define RES_STRING_UNI     11
 #define RES_NUMBER_SMALL   12
 
-#define RESULT_COUNT 6000
-
 enum states {
   STATE_BASE = 0,
   STATE_STRING,
@@ -47,6 +45,7 @@ struct lexer {
   int length;
 
   int result_num;
+  int result_limit;
   struct lexer_result *result;
 };
 

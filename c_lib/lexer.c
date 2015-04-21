@@ -190,8 +190,7 @@ int handle_string(const char *input, struct lexer *lexer)
       // Emit partial string
       res->restype = RES_STRING_PARTIAL;
       res->adddata = 0;
-      if (res->length != 0) // Do not add new result, if length == 0
-          lexer->result_num++;
+      lexer->result_num++;
 
       // If we stopped because of backslash, change state, move one forward
       if (lexer->position < lexer->length) {
@@ -251,7 +250,7 @@ static inline void emitchar(char ch, struct lexer *lexer)
 
   res->restype = RES_STRING_PARTIAL;
   res->startpos = lexer->position;
-  res->length = 0;
+  res->length = -1; // Special value indicating that this is special character
   res->adddata = ch;
 
   lexer->result_num++;
@@ -294,7 +293,7 @@ int lex_json(const char *input, struct lexer *lexer, struct lexer_result *result
       &&state_string_uni
   };
   #define DISPATCH() { \
-     if (!(lexer->position < lexer->length && lexer->result_num < RESULT_COUNT && res == 0)) \
+     if (!(lexer->position < lexer->length && lexer->result_num < lexer->result_limit && res == 0)) \
         return res; \
      goto *dispatch_table[lexer->current_state];\
      }

@@ -82,7 +82,6 @@ import qualified Data.Text.Lazy              as TL
 import           Data.Text.Lazy.Encoding     (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
-import           Data.Bits                   (clearBit, setBit)
 import           Data.JsonStream.CLexer      (tokenParser)
 import           Data.JsonStream.TokenParser
 
@@ -463,6 +462,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
     handleLongString level _ (StringContent _) ntok = moreData (handleLongString level) ntok
     handleLongString 0 _ StringEnd ntok = Done "" ntok
     handleLongString level _ StringEnd ntok = moreData (handleTok level) ntok
+    handleLongString _ _ el _ = Failed $ "Unexpected element in handleLongStr: " ++ (show el)
 
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok
@@ -480,6 +480,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
         ArrayBegin -> moreData (handleTok (level + 1)) ntok
         ObjectBegin -> moreData (handleTok (level + 1)) ntok
+        StringEnd -> Failed "Internal error - out of order StringEnd"
 
 -- | Gather matches and return them as list.
 --

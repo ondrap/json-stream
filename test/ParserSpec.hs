@@ -262,6 +262,14 @@ errTests = describe "Tests of previous errors" $ do
         res = parseLazyByteString parser onechar :: [Int]
     res `shouldBe` [123]
 
+  it "Parses correctly handles empty strings when sliced:" $ do
+    let test1 = "[\"\", \"\", true]"
+        onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
+        parser = arrayOf bool
+        res = parseByteString parser test1 :: [Bool]
+    res `shouldBe` [True]
+
+
 -- testLexer (start:rest) = iter rest (tokenParser start)
 --   where
 --     iter [] (TokMoreData cont) = print "done"
