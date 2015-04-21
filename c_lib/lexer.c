@@ -179,7 +179,8 @@ static inline int safechar(char x) {
 int handle_string(const char *input, struct lexer *lexer)
 {
     int startposition = lexer->position;
-    for (char ch=input[lexer->position]; lexer->position < lexer->length && safechar(ch); ch = input[++lexer->position])
+    char ch;
+    for (ch=input[lexer->position]; lexer->position < lexer->length && safechar(ch); ch = input[++lexer->position])
       ;
 
     struct lexer_result *res = &lexer->result[lexer->result_num];
