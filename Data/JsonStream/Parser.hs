@@ -249,7 +249,7 @@ object' once valparse = Parser $ \tp ->
     nextitem yielded _ (JValue (AE.String key)) ntok = objcontent yielded (callParse (valparse key) ntok)
     nextitem yielded _ (StringContent str) ntok =
           objcontent yielded $ moreData (getLongKey [str] (BS.length str)) ntok
-    nextitem _ _ _ _ = Failed "Object - unexpected item"
+    nextitem _ _ el _ = Failed $ "Object - unexpected item: " ++ show el
 
     -- If we already yielded and should yield once, ignore the rest of the object
     objcontent yielded (Done _ ntp)
@@ -460,6 +460,10 @@ ignoreVal = ignoreVal' 0
 ignoreVal' :: Int -> Parser a
 ignoreVal' stval = Parser $ moreData (handleTok stval)
   where
+    handleLongString level _ (StringContent _) ntok = moreData (handleLongString level) ntok
+    handleLongString 0 _ StringEnd ntok = Done "" ntok
+    handleLongString level _ StringEnd ntok = moreData (handleTok level) ntok
+
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok
     handleTok 0 _ (JInteger _) ntok = Done "" ntok
@@ -471,8 +475,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
       case el of
         JValue _ -> moreData (handleTok level) ntok
         JInteger _ -> moreData (handleTok level) ntok
-        StringContent _ -> moreData (handleTok (setBit level 30)) ntok
-        StringEnd -> moreData (handleTok (clearBit level 30)) ntok -- The 30s bit indicates that we are in string
+        StringContent _ -> moreData (handleLongString level) ntok
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
         ArrayBegin -> moreData (handleTok (level + 1)) ntok

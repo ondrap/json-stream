@@ -14,6 +14,7 @@ import Data.Text.Encoding (encodeUtf8)
 
 import Data.JsonStream.Parser
 import Data.JsonStream.TokenParser
+import Data.JsonStream.CLexer
 
 -- During the tests the single quotes are replaced with double quotes in the strings as
 -- otherwise it would be unreadable in haskell
@@ -247,7 +248,31 @@ errTests = describe "Tests of previous errors" $ do
         res = parse parser test1 :: [[Int]]
     res `shouldBe` []
 
-  -- it "Parses correctly empty objects:" $ do
+  it "Parses correctly runs ignore parser on array:" $ do
+    let test1 = "[{\"name\":\"x\",\"key\":20}]"
+        onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
+        parser = arrayOf $ "key" .: integer
+        res = parseLazyByteString parser onechar :: [Int]
+    res `shouldBe` [20]
+
+  it "Parses correctly runs ignore parser on array:" $ do
+    let test1 = "[\"abc\",123,\"def\"]"
+        onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
+        parser = arrayOf integer
+        res = parseLazyByteString parser onechar :: [Int]
+    res `shouldBe` [123]
+
+-- testLexer (start:rest) = iter rest (tokenParser start)
+--   where
+--     iter [] (TokMoreData cont) = print "done"
+--     iter (dta:rest) (TokMoreData cont) = do
+--         print "more-data"
+--         iter rest (cont dta)
+--     iter dta (PartialResult el cont) = do
+--         print el
+--         iter dta cont
+--     iter _ TokFailed = print "tok failed"
+
 
 
 aeCompare :: Spec
