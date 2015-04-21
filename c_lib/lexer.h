@@ -17,7 +17,7 @@
 #define RES_STRING_UNI     11
 #define RES_NUMBER_SMALL   12
 
-#define RESULT_COUNT 10000
+#define RESULT_COUNT 6000
 
 enum states {
   STATE_BASE = 0,
@@ -32,7 +32,7 @@ enum states {
 
 struct lexer_result {
   int restype;
-  int startpos; // Startpos + length should point to unparsed data
+  int startpos; // Startpos + length should point to unparsed data for } and ]
   int length;
 
   int adddata; // Additional data to result
