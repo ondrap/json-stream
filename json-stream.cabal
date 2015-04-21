@@ -43,10 +43,10 @@ library
 
 test-suite spec
   main-is:             Spec.hs
-  other-modules:       Data.JsonStream.CLexType
+  other-modules:       Data.JsonStream.CLexType, ParserSpec
   c-sources:           c_lib/lexer.c
   include-dirs:        c_lib
-
+  includes:            c_lib/lexer.h
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test, .
   default-language:    Haskell2010
