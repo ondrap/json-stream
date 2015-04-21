@@ -73,7 +73,7 @@ static inline int handle_base(const char *input, struct lexer *lexer)
         lexer->state_data = 0;
         return LEX_OK;
       } else {
-        printf("Uknown character: %c\n", chr);
+        // Unknown character
         return LEX_ERROR;
       }
   }
@@ -91,7 +91,7 @@ static inline int handle_ident(const char *input, struct lexer *lexer, const cha
         lexer->current_state = STATE_BASE;
         return LEX_OK;
       } else {
-        printf("Unexpected next character in handle_ident: %d\n", chr);
+        // Unexpected next character in handle_ident
         return LEX_ERROR;
       }
     }
@@ -209,7 +209,7 @@ int handle_string(const char *input, struct lexer *lexer)
       lexer->position++; // Skip the final '"'
       return LEX_OK;
     }
-    printf("Internal error.\n");
+    // Internal error, shouldn't get here
     return LEX_ERROR;
 }
 

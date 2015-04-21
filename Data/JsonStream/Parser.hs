@@ -388,7 +388,8 @@ number = jvalue cvt (Just . fromIntegral)
     cvt (AE.Number num) = Just num
     cvt _ = Nothing
 
--- | Parse to integer type. If you are using integer numbers, use this parser.
+-- | Parse to bounded integer type (not 'Integer').
+-- If you are using integer numbers, use this parser.
 -- It skips the conversion JSON -> 'Scientific' -> 'Int' and uses an 'Int' directly.
 integer :: (Integral i, Bounded i) => Parser i
 integer = jvalue cvt (Just . fromIntegral)
@@ -488,6 +489,12 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         ObjectBegin -> moreData (handleTok (level + 1)) ntok
 
 -- | Gather matches and return them as list.
+--
+-- > >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
+-- > >>> let parser = arrayOf $ (,) <$> toList ("keys" .: arrayOf integer)
+-- >                                <*> toList ("values" .: arrayOf integer)
+-- > >>> parseByteString parser json :: [([Int], [Int])]
+-- > [([1,2],[5,6]),([9,8],[7,6])]
 toList :: Parser a -> Parser [a]
 toList f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
@@ -539,6 +546,9 @@ infixl 6 .|
 
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
+--
+-- > >>> parseByteString (arrayOf (1 .! bool)) "[ [1,true,null], [2,false], [3]]" :: [Bool]
+-- > [True,False]
 (.!) :: Int -> Parser a -> Parser a
 (.!) = arrayWithIndexOf
 infixr 7 .!
@@ -568,10 +578,10 @@ runParser parser = runParser' parser BS.empty
 -- | Parse a bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
 --
 -- > parseByteString (arrayOf integer) "[1,2,3,4]" :: [Int]
--- [1,2,3,4]
+-- > [1,2,3,4]
 --
 -- > parseByteString (arrayOf ("name" .: string)) "[{\"name\":\"KIWI\"}, {\"name\":\"BIRD\"}]"
--- ["KIWI","BIRD"]
+-- > ["KIWI","BIRD"]
 parseByteString :: Parser a -> BS.ByteString -> [a]
 parseByteString parser startdata = loop (runParser' parser startdata)
   where

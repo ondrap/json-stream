@@ -241,6 +241,13 @@ errTests = describe "Tests of previous errors" $ do
         res = parse parser test1 :: [Int]
     res `shouldBe` [2]
 
+  it "Parses correctly empty arrays:" $ do
+    let test1 = "[]"
+        parser = arrayOf $ toList ("keys" .: arrayOf integer)
+        res = parse parser test1 :: [[Int]]
+    res `shouldBe` []
+
+  -- it "Parses correctly empty objects:" $ do
 
 
 aeCompare :: Spec
