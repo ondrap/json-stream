@@ -258,7 +258,7 @@ object' once valparse = Parser $ \tp ->
     objcontent _ (Yield v np) = Yield v (objcontent True np)
     objcontent _ (Failed err) = Failed err
 
-    getLongKey acc len _ el ntok =
+    getLongKey acc !len _ el ntok =
       case el of
         StringEnd
           | Right key <- decodeUtf8' (BL.fromChunks $ reverse acc) ->
@@ -332,7 +332,7 @@ jvalue convert cvtint = Parser (moreData value')
 longString :: Maybe Int -> Parser T.Text
 longString mbounds = Parser $ moreData (handle [] 0)
   where
-    handle acc len tok el ntok =
+    handle acc !len tok el ntok =
       case el of
         JValue (AE.String str) -> Yield str (Done "" ntok)
         StringContent str
