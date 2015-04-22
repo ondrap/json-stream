@@ -337,7 +337,7 @@ longString mbounds = Parser $ moreData (handle [] 0)
         JValue (AE.String str) -> Yield str (Done "" ntok)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
-                          -> callParse (ignoreVal' 1) ntok
+                          -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
           | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
         StringEnd
           | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc)
@@ -462,7 +462,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
     handleLongString level _ (StringContent _) ntok = moreData (handleLongString level) ntok
     handleLongString 0 _ StringEnd ntok = Done "" ntok
     handleLongString level _ StringEnd ntok = moreData (handleTok level) ntok
-    handleLongString _ _ el _ = Failed $ "Unexpected element in handleLongStr: " ++ (show el)
+    handleLongString _ _ el _ = Failed $ "Unexpected element in handleLongStr: " ++ show el
 
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok

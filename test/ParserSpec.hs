@@ -266,8 +266,15 @@ errTests = describe "Tests of previous errors" $ do
     let test1 = "[\"\", \"\", true]"
         onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
         parser = arrayOf bool
-        res = parseByteString parser test1 :: [Bool]
+        res = parseLazyByteString parser onechar :: [Bool]
     res `shouldBe` [True]
+
+  it "Correctly parses safeString when sliced" $ do
+    let test1 = "[\"looooooooooong\", \"short\"]"
+        onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
+        parser = arrayOf (safeString 6)
+        res = parseLazyByteString parser onechar :: [T.Text]
+    res `shouldBe` ["short"]
 
 
 -- testLexer (start:rest) = iter rest (tokenParser start)
