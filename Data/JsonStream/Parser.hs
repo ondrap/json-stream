@@ -239,12 +239,12 @@ elemFound elsearch start end parser = Parser $ moreData handle
     parseAndAppend (MoreData (Parser np, ntp)) = MoreData (Parser (parseAndAppend . np), ntp)
     parseAndAppend (Done ctx ntp) = Yield end (Done ctx ntp)
 
--- | Generate start/end values when an array is found, in between run a parser.
+-- | Generate start/end values when an object is found, in between run a parser.
 -- The inner parser is not run if an array is not found.
 objectFound :: a -> a -> Parser a -> Parser a
 objectFound = elemFound ObjectBegin
 
--- | Generate start/end values when an object is found, in between run a parser.
+-- | Generate start/end values when an array is found, in between run a parser.
 -- The inner parser is not run if an array is not found.
 --
 -- > >>> let test = "[[1,2,3],true,[],false,{\"key\":1}]" :: ByteString
