@@ -67,6 +67,9 @@ module Data.JsonStream.Parser (
   , filterI
   , takeI
   , toList
+    -- * SAX-like parsers
+  , arrayFound
+  , objectFound
 ) where
 
 import           Control.Applicative
@@ -221,6 +224,34 @@ array' valparse = Parser $ \tp ->
 -- | Match all items of an array.
 arrayOf :: Parser a -> Parser a
 arrayOf valparse = array' (const valparse)
+
+-- | Generate start/end objects when an element is found, in between run a parser.
+-- The inner parser is not run if an array is not found.
+elemFound :: Element -> a -> a -> Parser a -> Parser a
+elemFound elsearch start end parser = Parser $ moreData handle
+  where
+    handle tok el _
+      | el == elsearch = Yield start (parseAndAppend (callParse parser tok))
+    handle tok _ _ = callParse ignoreVal tok
+
+    parseAndAppend (Failed err) = Failed err
+    parseAndAppend (Yield v np) = Yield v (parseAndAppend np)
+    parseAndAppend (MoreData (Parser np, ntp)) = MoreData (Parser (parseAndAppend . np), ntp)
+    parseAndAppend (Done ctx ntp) = Yield end (Done ctx ntp)
+
+-- | Generate start/end values when an array is found, in between run a parser.
+-- The inner parser is not run if an array is not found.
+objectFound :: a -> a -> Parser a -> Parser a
+objectFound = elemFound ObjectBegin
+
+-- | Generate start/end values when an object is found, in between run a parser.
+-- The inner parser is not run if an array is not found.
+--
+-- > >>> let test = "[[1,2,3],true,[],false,{\"key\":1}]" :: ByteString
+-- > >>> parseByteString (arrayOf (arrayFound 10 20 (1 .! integer))) test :: [Int]
+-- > [10,2,20,10,20]
+arrayFound :: a -> a -> Parser a -> Parser a
+arrayFound = elemFound ArrayBegin
 
 -- | Match nith item in an array.
 arrayWithIndexOf :: Int -> Parser a -> Parser a

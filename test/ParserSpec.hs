@@ -105,6 +105,17 @@ specObjComb = describe "Object accesors" $ do
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [1]
 
+  it "arrayFound generates events" $ do
+    let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
+        parser = arrayOf (arrayFound 10 20 (1 .! integer))
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [10,2,20,10,20]
+
+  it "objectFound generates events" $ do
+    let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
+        parser = arrayOf (objectFound 10 20 ("key" .: integer))
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [10,1,20]
 
 specEdge :: Spec
 specEdge = describe "Edge cases" $ do
