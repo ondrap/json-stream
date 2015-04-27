@@ -224,7 +224,7 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
 
 -- | Estimate number of elements in a chunk
 estResultLimit :: BS.ByteString -> CInt
-estResultLimit dta = fromIntegral $ 20 + BS.length dta `div` 5
+estResultLimit dta = fromIntegral $ 20 + BS.length dta `quot` 5
 
 getNextResult :: TempData -> TokenResult
 getNextResult tmp@(TempData {..})
