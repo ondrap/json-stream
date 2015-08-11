@@ -67,6 +67,7 @@ module Data.JsonStream.Parser (
   , filterI
   , takeI
   , toList
+  , mapWithFailure
     -- * SAX-like parsers
   , arrayFound
   , objectFound
@@ -541,6 +542,21 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
     loop (Yield v np)
       | cond v = Yield v (loop np)
       | otherwise = loop np
+
+-- | 
+-- A back-door for lifting of possibly failing actions.
+mapWithFailure :: (a -> Either String b) -> Parser a -> Parser b
+mapWithFailure mapping =
+  updateParser
+  where
+    updateParser (Parser run) = Parser $ updateParseResult . run
+    updateParseResult x = case x of
+      MoreData (parser, continuation) -> MoreData (updateParser parser, continuation)
+      Failed message -> Failed message
+      Done a b -> Done a b
+      Yield value parseResult -> case mapping value of
+        Left message -> Failed message
+        Right value' -> Yield value' (updateParseResult parseResult)
 
 --- Convenience operators
 
