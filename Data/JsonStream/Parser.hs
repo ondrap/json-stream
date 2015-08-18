@@ -543,8 +543,9 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
       | cond v = Yield v (loop np)
       | otherwise = loop np
 
--- | 
--- A back-door for lifting of possibly failing actions.
+-- | A back-door for lifting of possibly failing actions.
+-- If an action fails with Left value, convert it into failure
+-- of parsing
 mapWithFailure :: (a -> Either String b) -> Parser a -> Parser b
 mapWithFailure mapping =
   updateParser
