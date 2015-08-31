@@ -245,9 +245,7 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
                             (PartialResult StringEnd next)
         | resType == resStringPartial ->
-            if resLength == -1
-              then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) next -- \n\r..
-              else PartialResult (StringContent textSection) next -- normal string section
+              PartialResult (StringContent textSection) next -- string section
         | otherwise -> error "Unsupported"
 
 -- | Estimate number of elements in a chunk
