@@ -1,5 +1,8 @@
 dist/
+benchmarks/dist
 cabal.sandbox.config
 .cabal-sandbox/
 *.o
 *.hi
+Data/JsonStream/CLexType.hs
+Data/JsonStream/CLexType_out.hs

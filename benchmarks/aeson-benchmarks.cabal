@@ -1,0 +1,56 @@
+name:                aeson-benchmarks
+version:             0
+build-type:          Simple
+
+cabal-version:       >=1.8
+
+flag old-locale
+  description: If false then depend on time >= 1.5.
+               .
+               If true then depend on time < 1.5 together with old-locale.
+  default: False
+
+library
+  hs-source-dirs: ..
+  c-sources:           ../c_lib/lexer.c
+  includes:            ../c_lib/lexer.h
+  include-dirs:        ../c_lib
+
+  exposed-modules:
+    Data.JsonStream.Parser
+
+  other-modules:
+    Data.JsonStream.TokenParser
+    Data.JsonStream.CLexType
+    Data.JsonStream.CLexer
+
+  build-depends:         base >=4.7 && <4.9
+                       , bytestring
+                       , text
+                       , aeson (>=0.9)
+                       , vector
+                       , unordered-containers
+                       , scientific
+
+  ghc-options: -O2 -Wall
+
+executable aeson-benchmark-jstream-parse
+  main-is: JStreamParse.hs
+  ghc-options: -Wall -O2 -rtsopts
+  build-depends:
+    aeson-benchmarks,
+    aeson (>=0.9),
+    base,
+    bytestring,
+    time
+
+executable aeson-benchmark-aeson-parse
+  main-is: AesonParse.hs
+  ghc-options: -Wall -O2 -rtsopts
+  build-depends:
+    aeson-benchmarks,
+    attoparsec,
+    base,
+    bytestring,
+    time,
+    aeson (>=0.9)
