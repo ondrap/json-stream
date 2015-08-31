@@ -15,17 +15,17 @@ import           Control.Monad               (when)
 import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BSW
 import qualified Data.ByteString.Char8       as BS
-import qualified Data.ByteString.Internal as BS
-import qualified Data.ByteString.Unsafe as BS
+import qualified Data.ByteString.Internal    as BS
 import           Data.ByteString.Unsafe      (unsafeUseAsCString)
+import qualified Data.ByteString.Unsafe      as BS
 import           Data.Scientific             (Scientific, scientific)
-import qualified Data.Text                   as T
-import           Data.Text.Encoding          (decodeUtf8', encodeUtf8)
+import           Data.Text.Encoding          (decodeUtf8')
 import           Data.Text.Internal.Unsafe   (inlinePerformIO)
 import           Foreign
+import           Foreign.C.String
 import           Foreign.C.Types
-import Foreign.C.String
-import           System.IO.Unsafe            (unsafeDupablePerformIO, unsafePerformIO)
+import           System.IO.Unsafe            (unsafeDupablePerformIO,
+                                              unsafePerformIO)
 
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
@@ -133,8 +133,8 @@ unescapeText bs =
            BS.unsafeUseAsCString bs $ \inBs ->
            do bs_json_unescape (fromIntegral len) errCode inBs ptr
               code <- peek errCode
-              bs <- BS.unsafePackCString ptr
-              return (bs, code)
+              bs' <- BS.unsafePackCString ptr
+              return (bs', code)
        return $ if errCode /= 0
                 then Left ("Invalid escape sequence. ErrNo=" ++ show errCode)
                 else Right outBs
@@ -234,7 +234,11 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
                        Just num -> PartialResult (JValue (AE.Number num)) next
                        Nothing -> TokFailed
         | resType == resString ->
-          if | resAddData == 0 -> -- One-part string
+          if | resAddData == -1 -> -- One-part string without escaped characters
+                case decodeUtf8' textSection  of
+                  Right ctext -> PartialResult (JValue (AE.String ctext)) next
+                  Left _ -> TokFailed
+             | resAddData == 0 -> -- One-part string with escaped characters
                 case unescapeText textSection >>= (mapLeft show . decodeUtf8')  of
                   Right ctext -> PartialResult (JValue (AE.String ctext)) next
                   Left _ -> TokFailed

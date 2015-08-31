@@ -181,12 +181,15 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
 {
     int startposition = lexer->position;
     char ch;
+    int hasspecialchar = 0;
+
     for (ch=input[lexer->position]; lexer->position < lexer->length; ch = input[++lexer->position])
       if (lexer->state_data_2)
         lexer->state_data_2 = 0;
-      else if (ch == '\\')
+      else if (ch == '\\') {
         lexer->state_data_2 = 1;
-      else if (ch == '"')
+        hasspecialchar = 1;
+      } else if (ch == '"')
         break;
 
     struct lexer_result *res = &result[lexer->result_num];
@@ -194,7 +197,12 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
     res->length = lexer->position - startposition;
     if (lexer->position < lexer->length && input[lexer->position] == '"') {
       res->restype = RES_STRING;
-      res->adddata = lexer->state_data; // Indicate if this is complete string or final segment
+      if (lexer->state_data)
+        res->adddata = 1; // Indicate that we are final portion of the string
+      else if (hasspecialchar)
+        res->adddata = 0; // Indicate that the string contains escaped characters
+      else
+        res->adddata = -1; // Indicate that the stirng is clean UTF-8 (optimization)
 
       lexer->result_num++;
       lexer->current_state = STATE_BASE;
