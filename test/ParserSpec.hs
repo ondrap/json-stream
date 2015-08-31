@@ -13,6 +13,7 @@ import Control.Monad (forM_)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as Vec
 import qualified Data.HashMap.Strict as HMap
+import System.Directory (getDirectoryContents)
 
 import Data.JsonStream.Parser
 import Data.JsonStream.TokenParser
@@ -301,8 +302,6 @@ errTests = describe "Tests of previous errors" $ do
 --         iter dta cont
 --     iter _ TokFailed = print "tok failed"
 
-
-
 aeCompare :: Spec
 aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
   let values = [
@@ -326,10 +325,26 @@ aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
         , "  { \"a\" : true }   "
         , "{ \"v\":1.7976931348623157E308} "
         ]
+
   forM_ values $ \test -> it ("Parses " ++ show test ++ " the same as aeson") $ do
     let resStream = head $ parseByteString value test :: AE.Value
     let Just resAeson = AE.decode (BL.fromChunks [test])
     resStream `shouldBe` resAeson
+
+readBenchFiles dirname =
+    getDirectoryContents dirname >>= return . (filter isJson) >>= mapM readFile
+    where
+      readFile fname = BS.readFile (dirname ++ "/" ++ fname)
+      isJson fname = take 5 (reverse fname) == "nosj."
+
+aeCompareBench :: Spec
+aeCompareBench = describe "Compare benchmark jsons" $
+  it "JSONs from benchamark directory are the same" $ do
+    values <- readBenchFiles "benchmarks/json-data"
+    forM_ values $ \test -> do
+      let resStream = head $ parseByteString value test :: AE.Value
+      let Just resAeson = AE.decode (BL.fromChunks [test])
+      resStream `shouldBe` resAeson
 
 spec :: Spec
 spec = do
@@ -339,7 +354,7 @@ spec = do
   specControl
   errTests
   aeCompare
+  aeCompareBench
 
 main :: IO ()
-main = do
-  hspec spec
+main = hspec spec

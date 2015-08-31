@@ -59,6 +59,8 @@ test-suite spec
                        , unordered-containers
                        , hspec
                        , scientific
+                       , directory
+
 
 -- executable spdtest
 --   main-is: spdtest.hs
