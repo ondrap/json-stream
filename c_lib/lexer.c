@@ -63,7 +63,11 @@ static inline int handle_base(const char *input, struct lexer *lexer, struct lex
     case '}': add_simple_res(RES_CLOSE_BRACE, lexer, 1, result); lexer->position++;break;
     case '[': add_simple_res(RES_OPEN_BRACKET, lexer, 1, result); lexer->position++;break;
     case ']': add_simple_res(RES_CLOSE_BRACKET, lexer, 1, result); lexer->position++;break;
-    case '"': lexer->current_state = STATE_STRING; lexer->state_data = 0; lexer->position++;return LEX_OK;
+    case '"': lexer->current_state = STATE_STRING;
+              lexer->state_data = 0;
+              lexer->state_data_2 = 0;
+              lexer->position++;
+              return LEX_OK;
     case 't': lexer->current_state = STATE_TRUE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'f': lexer->current_state = STATE_FALSE; lexer->state_data = 1; lexer->position++;return LEX_OK;
     case 'n': lexer->current_state = STATE_NULL; lexer->state_data = 1; lexer->position++;return LEX_OK;
