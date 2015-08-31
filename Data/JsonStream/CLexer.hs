@@ -5,7 +5,9 @@
 {-# LANGUAGE RecordWildCards          #-}
 
 module Data.JsonStream.CLexer (
-  tokenParser
+    tokenParser
+  , unescapeText
+  , mapLeft
 ) where
 
 import           Control.Applicative         ((<$>))
@@ -13,6 +15,8 @@ import           Control.Monad               (when)
 import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BSW
 import qualified Data.ByteString.Char8       as BS
+import qualified Data.ByteString.Internal as BS
+import qualified Data.ByteString.Unsafe as BS
 import           Data.ByteString.Unsafe      (unsafeUseAsCString)
 import           Data.Scientific             (Scientific, scientific)
 import qualified Data.Text                   as T
@@ -20,7 +24,8 @@ import           Data.Text.Encoding          (decodeUtf8', encodeUtf8)
 import           Data.Text.Internal.Unsafe   (inlinePerformIO)
 import           Foreign
 import           Foreign.C.Types
-import           System.IO.Unsafe            (unsafeDupablePerformIO)
+import Foreign.C.String
+import           System.IO.Unsafe            (unsafeDupablePerformIO, unsafePerformIO)
 
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
@@ -115,6 +120,29 @@ data TempData = TempData {
   , tmpNumbers :: [BS.ByteString]
 }
 
+foreign import ccall unsafe "bs_json_unescape" bs_json_unescape :: CULong -> Ptr CInt -> CString -> CString -> IO ()
+
+unescapeText :: BS.ByteString -> Either String BS.ByteString
+unescapeText bs =
+    unsafePerformIO $
+    do let len = BS.length bs
+       outBsPtr <- BS.mallocByteString len
+       (outBs, errCode) <-
+           withForeignPtr outBsPtr $ \ptr ->
+           alloca $ \errCode ->
+           BS.unsafeUseAsCString bs $ \inBs ->
+           do bs_json_unescape (fromIntegral len) errCode inBs ptr
+              code <- peek errCode
+              bs <- BS.unsafePackCString ptr
+              return (bs, code)
+       return $ if errCode /= 0
+                then Left ("Invalid escape sequence. ErrNo=" ++ show errCode)
+                else Right outBs
+
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft _ (Right v) = Right v
+mapLeft f (Left v) = Left (f v)
+
 -- | Parse number from bytestring to Scientific using JSON syntax rules
 parseNumber :: BS.ByteString -> Maybe Scientific
 parseNumber tnumber = do
@@ -207,15 +235,11 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
                        Nothing -> TokFailed
         | resType == resString ->
           if | resAddData == 0 -> -- One-part string
-                case decodeUtf8' textSection of
+                case unescapeText textSection >>= (mapLeft show . decodeUtf8')  of
                   Right ctext -> PartialResult (JValue (AE.String ctext)) next
                   Left _ -> TokFailed
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
                             (PartialResult StringEnd next)
-        -- -- Unicode
-        | resType == resStringUni ->
-            PartialResult (StringContent (encodeUtf8 $ T.singleton $ toEnum resAddData)) next
-        -- -- Partial string, not the end
         | resType == resStringPartial ->
             if resLength == -1
               then PartialResult (StringContent (BSW.singleton $ fromIntegral resAddData)) next -- \n\r..

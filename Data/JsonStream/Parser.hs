@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE PatternGuards     #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -82,11 +83,10 @@ import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
 import           Data.Text.Encoding          (encodeUtf8)
-import qualified Data.Text.Lazy              as TL
-import           Data.Text.Lazy.Encoding     (decodeUtf8')
+import           Data.Text.Encoding     (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
-import           Data.JsonStream.CLexer      (tokenParser)
+import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
 
 
@@ -293,8 +293,8 @@ object' once valparse = Parser $ \tp ->
     getLongKey acc !len _ el ntok =
       case el of
         StringEnd
-          | Right key <- decodeUtf8' (BL.fromChunks $ reverse acc) ->
-              callParse (valparse $ T.concat $ TL.toChunks key) ntok
+          | Right key <- unescapeText (BS.concat $ reverse acc) >>= (mapLeft show . decodeUtf8') ->
+              callParse (valparse key) ntok
           | otherwise -> Failed "Error decoding UTF8"
         StringContent str
           | len > objectKeyStringLimit -> callParse (ignoreStrRestThen ignoreVal) ntok
@@ -372,8 +372,8 @@ longString mbounds = Parser $ moreData (handle [] 0)
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
           | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
         StringEnd
-          | Right val <- decodeUtf8' (BL.fromChunks $ reverse acc)
-                      -> Yield (T.concat $ TL.toChunks val) (Done "" ntok)
+          | Right val <- unescapeText (BS.concat $ reverse acc) >>= (mapLeft show . decodeUtf8')
+                      -> Yield val (Done "" ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
@@ -555,9 +555,9 @@ mapWithFailure mapping =
       MoreData (parser, continuation) -> MoreData (updateParser parser, continuation)
       Failed message -> Failed message
       Done a b -> Done a b
-      Yield value parseResult -> case mapping value of
+      Yield val parseResult -> case mapping val of
         Left message -> Failed message
-        Right value' -> Yield value' (updateParseResult parseResult)
+        Right val' -> Yield val' (updateParseResult parseResult)
 
 --- Convenience operators
 

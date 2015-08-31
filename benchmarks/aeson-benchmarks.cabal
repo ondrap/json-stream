@@ -12,7 +12,7 @@ flag old-locale
 
 library
   hs-source-dirs: ..
-  c-sources:           ../c_lib/lexer.c
+  c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c
   includes:            ../c_lib/lexer.h
   include-dirs:        ../c_lib
 

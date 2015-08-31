@@ -21,7 +21,6 @@ newtype LexResultType = LexResultType CInt deriving (Show, Eq, Storable)
   , resCloseBracket = RES_CLOSE_BRACKET
 
   , resStringPartial = RES_STRING_PARTIAL
-  , resStringUni = RES_STRING_UNI
   , resNumberPartial = RES_NUMBER_PARTIAL
   , resNumberSmall = RES_NUMBER_SMALL
   }

@@ -14,7 +14,6 @@
 
 #define RES_STRING_PARTIAL 9 /* Add-data: 0 - first part, 1 - other parts */
 #define RES_NUMBER_PARTIAL 10 /* Add-data: 0 - first part, 1 - other parts */
-#define RES_STRING_UNI     11
 #define RES_NUMBER_SMALL   12
 
 enum states {
@@ -23,9 +22,7 @@ enum states {
   STATE_NUMBER,
   STATE_TRUE,
   STATE_FALSE,
-  STATE_NULL,
-  STATE_STRING_SPECCHAR,
-  STATE_STRING_UNI
+  STATE_NULL
 };
 
 struct lexer_result {
