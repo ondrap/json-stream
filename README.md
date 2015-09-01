@@ -147,4 +147,4 @@ parseByteString :: Parser a -> ByteString -> [a]
 
 ```
 
-See haddocks documentation for more details.
+See [haddocks](https://hackage.haskell.org/package/json-stream) documentation for more details.
