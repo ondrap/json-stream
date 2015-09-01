@@ -55,7 +55,7 @@ resultParser =    const [] <$> filterI not ("errors" .: bool)
               >^> toList ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)
-bulkItemError = objectValues $
+bulkItemError = objectWithKey "index" $
     (,) <$> "_id"   .: string
         <*> "error" .: string
         <*  filterI statusError ("status" .: integer)
@@ -70,16 +70,15 @@ lexed pieces are then parsed using the user-specified parser. Compared to aeson,
 can be easily twice as fast, especially on larger structures.
 Json-stream is in streaming mode much friendlier to the GC,
 which makes the performance difference even bigger; however even when json-stream is used
-as an aeson replacement (`value` parser), there can be a performance gain.
+as an aeson replacement (`value` parser), there can be a performance gain (running aeson benchmarks
+has shown that json-stream is ~80% faster).
 
 Using json-stream parser instead of aeson `value` evades the need to build the structure
 using aeson `Value` and then converting it to the user-requested structure. Instead
 the structure is built on the fly directly during the parsing phase.
 
 Json-stream can optimize certain scenarios. If not all data from the input stream is
-required, it is skipped by the parsers. If the input JSON contains large string
-values (bigger then chunk size), they can be extracted directly using
-`bytestring` parser while avoiding the utf8 conversion. Using `integer` parser
+required, it is skipped by the parsers. Using `integer` parser
 with bounded integer types (not `Integer`) avoids converting all numbers to
 `Scientific` type.
 

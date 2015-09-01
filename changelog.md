@@ -1,5 +1,5 @@
 # 0.3.2.0
-- Changed string parsing; parsing of escaped strings is now very vast
+- Changed string parsing; parsing of escaped strings is now very fast
 - Removed bytestring parser
 
 # 0.3.0.4
