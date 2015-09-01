@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE PatternGuards     #-}
+{-# LANGUAGE TupleSections     #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -43,7 +43,6 @@ module Data.JsonStream.Parser (
     -- * FromJSON parser
   , value
   , string
-  , bytestring
     -- * Constant space parsers
   , safeString
   , number
@@ -82,8 +81,7 @@ import qualified Data.HashMap.Strict         as HMap
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
-import           Data.Text.Encoding          (encodeUtf8)
-import           Data.Text.Encoding     (decodeUtf8')
+import           Data.Text.Encoding          (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
 import           Data.JsonStream.CLexer
@@ -377,25 +375,13 @@ longString mbounds = Parser $ moreData (handle [] 0)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
--- | Match string as a ByteString without decoding the data from UTF8 and unescaping the contents
--- (strings larger than input chunk, small get always decoded).
-bytestring :: Parser BL.ByteString
-bytestring = Parser $ moreData (handle [])
-  where
-    handle acc tok el ntok =
-      case el of
-        JValue (AE.String str) -> Yield (BL.fromChunks [encodeUtf8 str]) (Done "" ntok)
-        StringContent str -> moreData (handle (str:acc)) ntok
-        StringEnd -> Yield (BL.fromChunks $ reverse acc) (Done "" ntok)
-        _ -> callParse ignoreVal tok
-
-
 -- | Parse string value, skip parsing otherwise.
 string :: Parser T.Text
 string = longString Nothing
 
 -- | Stops parsing string after the limit is reached. The string will not be matched
--- if it exceeds the size.
+-- if it exceeds the size. The size is the size of escaped string including escape
+-- characters.
 safeString :: Int -> Parser T.Text
 safeString limit = longString (Just limit)
 

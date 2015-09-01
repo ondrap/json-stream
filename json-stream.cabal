@@ -1,5 +1,5 @@
 name:                json-stream
-version:             0.3.1.0
+version:             0.3.2.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
@@ -36,11 +36,12 @@ library
   build-depends:         base >=4.7 && <4.9
                        , bytestring
                        , text
-                       , aeson
+                       , aeson >= 0.7
                        , vector
                        , unordered-containers
                        , scientific
   default-language:    Haskell2010
+
 
 test-suite spec
   main-is:             Spec.hs
@@ -51,6 +52,7 @@ test-suite spec
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test, .
   default-language:    Haskell2010
+  ghc-options:         -Wall
   build-depends:         base >=4.7 && <4.9
                        , bytestring
                        , text

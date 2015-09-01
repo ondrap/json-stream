@@ -4,12 +4,6 @@ build-type:          Simple
 
 cabal-version:       >=1.8
 
-flag old-locale
-  description: If false then depend on time >= 1.5.
-               .
-               If true then depend on time < 1.5 together with old-locale.
-  default: False
-
 library
   hs-source-dirs: ..
   c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c
@@ -27,7 +21,7 @@ library
   build-depends:         base >=4.7 && <4.9
                        , bytestring
                        , text
-                       , aeson (>=0.9)
+                       , aeson (>=0.7)
                        , vector
                        , unordered-containers
                        , scientific
@@ -39,7 +33,7 @@ executable aeson-benchmark-jstream-parse
   ghc-options: -Wall -O2 -rtsopts
   build-depends:
     aeson-benchmarks,
-    aeson (>=0.9),
+    aeson (>=0.7),
     base,
     bytestring,
     time

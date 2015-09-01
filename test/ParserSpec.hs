@@ -8,7 +8,6 @@ import Data.Aeson (Value(..))
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
-import Data.Text.Encoding (encodeUtf8)
 import Control.Monad (forM_)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as Vec
@@ -16,8 +15,6 @@ import qualified Data.HashMap.Strict as HMap
 import System.Directory (getDirectoryContents)
 
 import Data.JsonStream.Parser
-import Data.JsonStream.TokenParser
-import Data.JsonStream.CLexer
 
 -- During the tests the single quotes are replaced with double quotes in the strings as
 -- otherwise it would be unreadable in haskell
@@ -28,7 +25,7 @@ todquotes = BS.map squotes
     squotes '\'' = '"'
     squotes x = x
 
-
+parse :: Parser a -> BS.ByteString -> [a]
 parse parser text = parseByteString parser (todquotes text)
 
 testRemaining :: Parser a -> BS.ByteString -> BS.ByteString
@@ -331,10 +328,11 @@ aeCompare = describe "Compare parsing of strings aeason vs json-stream" $ do
     let Just resAeson = AE.decode (BL.fromChunks [test])
     resStream `shouldBe` resAeson
 
+readBenchFiles :: FilePath -> IO [BS.ByteString]
 readBenchFiles dirname =
-    getDirectoryContents dirname >>= return . (filter isJson) >>= mapM readFile
+    getDirectoryContents dirname >>= return . (filter isJson) >>= mapM readFile'
     where
-      readFile fname = BS.readFile (dirname ++ "/" ++ fname)
+      readFile' fname = BS.readFile (dirname ++ "/" ++ fname)
       isJson fname = take 5 (reverse fname) == "nosj."
 
 aeCompareBench :: Spec
