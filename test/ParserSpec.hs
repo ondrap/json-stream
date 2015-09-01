@@ -333,7 +333,7 @@ readBenchFiles dirname =
     getDirectoryContents dirname >>= return . (filter isJson) >>= mapM readFile'
     where
       readFile' fname = BS.readFile (dirname ++ "/" ++ fname)
-      isJson fname = take 5 (reverse fname) == "nosj."
+      isJson fname = take 5 (reverse fname) == ("nosj." :: String)
 
 aeCompareBench :: Spec
 aeCompareBench = describe "Compare benchmark jsons" $
