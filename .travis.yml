@@ -8,7 +8,7 @@ script:
   - "cabal configure --enable-tests --enable-library-coverage && cabal build && cabal test"
 after_script:
   - "cabal install hpc-coveralls"
-  - "hpc-coveralls count-von-count-tests --exclude-dir=test --display-report"
+  - "hpc-coveralls count-von-count-tests --exclude-dir=test --exclude-dir=benchmarks --display-report"
 
 notifications:
   email: true
