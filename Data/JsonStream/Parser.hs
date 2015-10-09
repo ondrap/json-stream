@@ -360,7 +360,7 @@ jvalue convert cvtint = Parser (moreData value')
 
 -- | Match a possibly bounded string roughly limited by a limit
 longString :: Maybe Int -> Parser T.Text
-longString mbounds = Parser $ moreData (handle [] 0)
+longString mbounds = Parser $ moreData (handle (BS.empty :) 0)
   where
     handle acc !len tok el ntok =
       case el of
@@ -368,9 +368,9 @@ longString mbounds = Parser $ moreData (handle [] 0)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
-          | otherwise     -> moreData (handle (str:acc) (len + BS.length str)) ntok
+          | otherwise     -> moreData (handle (acc . (str:)) (len + BS.length str)) ntok
         StringEnd
-          | Right val <- unescapeText (BS.concat $ reverse acc) >>= (mapLeft show . decodeUtf8')
+          | Right val <- unescapeText (BS.concat (acc [])) >>= (mapLeft show . decodeUtf8')
                       -> Yield val (Done "" ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
