@@ -81,13 +81,10 @@ import qualified Data.HashMap.Strict         as HMap
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
-import           Data.Text.Encoding          (decodeUtf8')
 import qualified Data.Vector                 as Vec
 
 import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
-import Data.JsonStream.Unescape
-
 
 -- | Limit for the size of an object key
 objectKeyStringLimit :: Int
@@ -292,7 +289,7 @@ object' once valparse = Parser $ \tp ->
     getLongKey acc !len _ el ntok =
       case el of
         StringEnd
-          | Right key <- unescapeText2 (BS.concat $ reverse acc) ->
+          | Right key <- unescapeText (BS.concat $ reverse acc) ->
               callParse (valparse key) ntok
           | otherwise -> Failed "Error decoding UTF8"
         StringContent str
@@ -371,7 +368,7 @@ longString mbounds = Parser $ moreData (handle (BS.empty :) 0)
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
           | otherwise     -> moreData (handle (acc . (str:)) (len + BS.length str)) ntok
         StringEnd
-          | Right val <- unescapeText2 (BS.concat (acc []))
+          | Right val <- unescapeText (BS.concat (acc []))
                       -> Yield val (Done "" ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok

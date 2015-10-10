@@ -1,132 +1,171 @@
-/**
-  * Copied from https://github.com/agrafix/highjson project.
-  */
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
 
-#include <stdlib.h>
 
-void bs_json_unescape(const unsigned long length, int *error, char *bsIn, char *bsOut);
+#define UTF8_ACCEPT 0
+#define UTF8_REJECT 12
 
-inline void private_parse_hex(const char a, const char b, const char c, const char d, int *number, short *error) {
-    const char hex[5] = { a, b, c, d, '\0' };
-    char *internalError;
-    *number = (int)strtol(hex, &internalError, 16);
-    if (*internalError != '\0') {
-        *error = 1;
-    } else {
-        *error = 0;
-    }
+static const uint8_t utf8d[] = {
+  // The first part of the table maps bytes to character classes that
+  // to reduce the size of the transition table and create bitmasks.
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+   7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+   8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+  10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+
+  // The second part is a transition table that maps a combination
+  // of a state of the automaton and a character class to a state.
+   0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
+  12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
+  12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
+  12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
+  12,36,12,12,12,12,12,12,12,12,12,12,
+};
+
+static uint32_t inline decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
+  uint32_t type = utf8d[byte];
+
+  *codep = (*state != UTF8_ACCEPT) ?
+    (byte & 0x3fu) | (*codep << 6) :
+    (0xff >> type) & (byte);
+
+  *state = utf8d[256 + *state + type];
+  return *state;
 }
 
-#define UTF8_CHAR(N, OUT) \
-    if (N < 0x80) { \
-        OUT = (char)N; \
-    } else if (N < 0x800) { \
-        OUT = (char)((N >> 6) | 0xc0); \
-        OUT = (char)((N & 0x3F) | 0x80); \
-    } else if (N < 0xffff) { \
-        OUT = (char)((N >> 12) | 0xe0); \
-        OUT = (char)(((N >> 6) & 0x3f) | 0x80); \
-        OUT = (char)((N & 0x3f) | 0x80); \
-    } else { \
-        OUT = (char)((N >> 18) | 0xF0); \
-        OUT = (char)(((N >> 12) & 0x3F) | 0x80); \
-        OUT = (char)(((N >> 6) & 0x3F) | 0x80); \
-        OUT = (char)((N & 0x3f) | 0x80); \
-    }
+typedef enum { STANDARD = 0, BACKSLASH, UNICODE1, UNICODE2, UNICODE3, UNICODE4, SURROGATE1, SURROGATE2 } jstates;
 
-void bs_json_unescape(const unsigned long length, int *error, char *bsIn, char *bsOut)
+static int inline ishexnum(uint32_t c)
 {
-    register unsigned long ptr = 0;
-    while (ptr < length) {
-        const char ch = *bsIn++;
-        ptr++;
-        if (ch == '\\') {
-            if (ptr >= length) {
-                *error = 1;
-                return;
-            }
-            const char nextCh = *bsIn++;
-            ptr++;
-            switch (nextCh) {
-            case '\\':
-                *bsOut++ = '\\';
-                break;
-            case '"':
-                *bsOut++ = '"';
-                break;
-            case '/':
-                *bsOut++ = '/';
-                break;
-            case 'b':
-                *bsOut++ = '\b';
-                break;
-            case 'f':
-                *bsOut++ = '\f';
-                break;
-            case 'n':
-                *bsOut++ = '\n';
-                break;
-            case 'r':
-                *bsOut++ = '\r';
-                break;
-            case 't':
-                *bsOut++ = '\t';
-                break;
-            case 'u':
-                if (ptr+3 >= length) {
-                    *error = 3;
-                    return;
-                }
-                ptr += 4;
-                int number = 0;
-                short hexError = 0;
-                const char a = *bsIn++; const char b = *bsIn++; const char c = *bsIn++; const char d = *bsIn++;
-                private_parse_hex(a, b, c, d, &number, &hexError);
-                if (hexError == 1) {
-                    *error = 4;
-                    return;
-                }
-                if (number < 0xd800 || number > 0xdfff) {
-                    UTF8_CHAR(number, *bsOut++);
-                } else if (number <= 0xdbff) {
-                    if (ptr+5 >= length) {
-                        *error = 5;
-                        return;
-                    }
-                    ptr += 6;
-                    if (*bsIn++ != '\\') {
-                        *error = 6;
-                        return;
-                    }
-                    if (*bsIn++ != 'u') {
-                        *error = 7;
-                        return;
-                    }
-                    int numberB = 0;
-                    short hexErrorB = 0;
-                    const char ai = *bsIn++; const char bi = *bsIn++; const char ci = *bsIn++; const char di = *bsIn++;
-                    private_parse_hex(ai, bi, ci, di, &numberB, &hexErrorB);
-                    if (hexErrorB == 1) {
-                        *error = 8;
-                        return;
-                    }
-                    if (numberB >= 0xdc00 && numberB <= 0xdfff) {
-                        const int r = ((number - 0xdc00) << 10) + (numberB - 0xdc00) + 0x10000;
-                        UTF8_CHAR(r, *bsOut++);
-                    } else {
-                        *error = 9;
-                        return;
-                    }
-                }
-                break;
-            default:
-                *error = 2;
-                return;
-            }
-        } else {
-            *bsOut++ = ch;
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+static uint32_t inline decode_hex(uint32_t c)
+{
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  else if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  else if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  return 0; // Should not happen
+}
+
+static int inline isLowSurrogate(uint16_t c)
+{
+  return c >= 0xDC00 && c <= 0xDFFF;
+}
+
+static int inline isHighSurrogate(uint16_t c)
+{
+  return c >= 0xD800 && c <= 0xDBFF;
+}
+
+// Decode, return non-zero value on error
+int
+_js_decode_string(uint16_t *const dest, size_t *destoff,
+                  const uint8_t *s, const uint8_t *const srcend)
+{
+  uint16_t *d = dest + *destoff;
+  uint32_t state = 0;
+  uint32_t codepoint;
+
+  int surrogate = 0;
+  uint16_t unidata;
+
+  // Optimized version of dispatch when just an ASCII char is expected
+  #define DISPATCH_ASCII(label) {\
+    if (s >= srcend) {\
+      return -1;\
+    }\
+    codepoint = *s++;\
+    goto label;\
+  }
+
+  standard:
+    // Test end of stream
+    while (s < srcend) {
+        if (*s <= 127)
+          codepoint = *s++;
+        else if (decode(&state, &codepoint, *s++) != UTF8_ACCEPT) {
+          if (state == UTF8_REJECT)
+            return -1;
+          continue;
+        }
+
+        if (codepoint == '\\')
+          DISPATCH_ASCII(backslash)
+        else if (codepoint <= 0xffff)
+          *d++ = (uint16_t) codepoint;
+        else {
+          *d++ = (uint16_t) (0xD7C0 + (codepoint >> 10));
+          *d++ = (uint16_t) (0xDC00 + (codepoint & 0x3FF));
         }
     }
-    *bsOut = '\0';
-    *error = 0;
+    *destoff = d - dest;
+    // Exit point
+    return (state != UTF8_ACCEPT);
+  backslash:
+    switch (codepoint) {
+      case '"':
+      case '\\':
+      case '/':
+        *d++ = (uint16_t) codepoint;
+        goto standard;
+        break;
+      case 'b': *d++ = '\b';goto standard;
+      case 'f': *d++ = '\f';goto standard;
+      case 'n': *d++ = '\n';goto standard;
+      case 'r': *d++ = '\r';goto standard;
+      case 't': *d++ = '\t';goto standard;
+      case 'u': DISPATCH_ASCII(unicode1);;break;
+      default:
+        return -1;
+    }
+  unicode1:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata = decode_hex(codepoint) << 12;
+    DISPATCH_ASCII(unicode2);
+  unicode2:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint) << 8;
+    DISPATCH_ASCII(unicode3);
+  unicode3:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint) << 4;
+    DISPATCH_ASCII(unicode4);
+  unicode4:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint);
+    *d++ = (uint16_t) unidata;
+
+    if (surrogate) {
+      if (!isLowSurrogate(unidata))
+        return -1;
+      surrogate = 0;
+    } else {
+      if (isHighSurrogate(unidata)) {
+        surrogate = 1;
+        DISPATCH_ASCII(surrogate1);
+      } else if (isLowSurrogate(unidata))
+        return -1;
+    }
+    goto standard;
+  surrogate1:
+    if (codepoint != '\\')
+      return -1;
+    DISPATCH_ASCII(surrogate2)
+  surrogate2:
+    if (codepoint != 'u')
+      return -1;
+    DISPATCH_ASCII(unicode1)
 }

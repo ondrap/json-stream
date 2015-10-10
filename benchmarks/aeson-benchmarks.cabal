@@ -6,7 +6,7 @@ cabal-version:       >=1.8
 
 library
   hs-source-dirs: ..
-  c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c, ../c_lib/unescape_string2.c
+  c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c
   includes:            ../c_lib/lexer.h
   include-dirs:        ../c_lib
 

@@ -1,33 +1,27 @@
-{-# LANGUAGE BangPatterns, CPP, ForeignFunctionInterface, GeneralizedNewtypeDeriving, MagicHash,
-    UnliftedFFITypes #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE MagicHash                #-}
+{-# LANGUAGE UnliftedFFITypes         #-}
 
 module Data.JsonStream.Unescape (
-  unescapeText2
+  unescapeText
 ) where
 
-import Control.Monad.ST.Unsafe (unsafeIOToST, unsafeSTToIO)
-import Control.Exception (evaluate, try)
-import Control.Monad.ST (runST)
-import Data.ByteString as B
-import Data.ByteString.Internal as B hiding (c2w)
-import Data.Text.Encoding.Error (OnDecodeError, UnicodeException, strictDecode)
-import Data.Text.Internal (Text(..), safe, text)
-import Data.Text.Internal.Private (runText)
-import Data.Text.Internal.Unsafe.Char (unsafeWrite)
-import Data.Text.Internal.Unsafe.Shift (shiftR)
-import Data.Text.Unsafe (unsafeDupablePerformIO)
-import Data.Word (Word8, Word32)
-import Foreign.C.Types (CSize(..), CInt(..))
-import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Marshal.Utils (with)
-import Foreign.Ptr (Ptr, minusPtr, nullPtr, plusPtr)
-import Foreign.Storable (Storable, peek, poke)
-import GHC.Base (ByteArray#, MutableByteArray#)
-import qualified Data.Text.Array as A
-import qualified Data.Text.Internal.Encoding.Fusion as E
-import qualified Data.Text.Internal.Fusion as F
-import Data.Text.Encoding.Error (UnicodeException(..))
-import Control.Exception (throw)
+import           Control.Exception          (evaluate, throw, try)
+import           Control.Monad.ST.Unsafe    (unsafeIOToST, unsafeSTToIO)
+import           Data.ByteString            as B
+import           Data.ByteString.Internal   as B hiding (c2w)
+import qualified Data.Text.Array            as A
+import           Data.Text.Encoding.Error   (UnicodeException (..))
+import           Data.Text.Internal         (Text (..))
+import           Data.Text.Internal.Private (runText)
+import           Data.Text.Unsafe           (unsafeDupablePerformIO)
+import           Data.Word                  (Word8)
+import           Foreign.C.Types            (CInt (..), CSize (..))
+import           Foreign.ForeignPtr         (withForeignPtr)
+import           Foreign.Marshal.Utils      (with)
+import           Foreign.Ptr                (Ptr, plusPtr)
+import           Foreign.Storable           (peek)
+import           GHC.Base                   (MutableByteArray#)
 
 foreign import ccall unsafe "_js_decode_string" c_js_decode
     :: MutableByteArray# s -> Ptr CSize
@@ -52,6 +46,6 @@ unescapeText' (PS fp off len) = runText $ \done -> do
   desc = "Data.Text.Internal.Encoding.decodeUtf8: Invalid UTF-8 stream"
 {-# INLINE unescapeText' #-}
 
-unescapeText2 :: ByteString -> Either UnicodeException Text
-unescapeText2 = unsafeDupablePerformIO . try . evaluate . unescapeText'
-{-# INLINE unescapeText2 #-}
+unescapeText :: ByteString -> Either UnicodeException Text
+unescapeText = unsafeDupablePerformIO . try . evaluate . unescapeText'
+{-# INLINE unescapeText #-}
