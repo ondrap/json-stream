@@ -29,8 +29,9 @@ source-repository head
 
 library
   exposed-modules:     Data.JsonStream.Parser
-  other-modules:       Data.JsonStream.TokenParser, Data.JsonStream.CLexType, Data.JsonStream.CLexer
-  c-sources:           c_lib/lexer.c, c_lib/unescape_string.c
+  other-modules:       Data.JsonStream.TokenParser, Data.JsonStream.CLexType, Data.JsonStream.CLexer,
+                       Data.JsonStream.Unescape
+  c-sources:           c_lib/lexer.c, c_lib/unescape_string.c, c_lib/unescape_string2.c
   includes:            c_lib/lexer.h
   include-dirs:        c_lib
   build-depends:         base >=4.7 && <4.9
@@ -46,7 +47,7 @@ library
 test-suite spec
   main-is:             Spec.hs
   other-modules:       Data.JsonStream.CLexType, ParserSpec
-  c-sources:           c_lib/lexer.c, c_lib/unescape_string.c
+  c-sources:           c_lib/lexer.c, c_lib/unescape_string.c, c_lib/unescape_string2.c
   include-dirs:        c_lib
   includes:            c_lib/lexer.h
   type:                exitcode-stdio-1.0

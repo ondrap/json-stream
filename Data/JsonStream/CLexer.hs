@@ -29,6 +29,7 @@ import           System.IO.Unsafe            (unsafeDupablePerformIO,
 
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
+import Data.JsonStream.Unescape
 
 -- | Limit for maximum size of a number; fail if larger number is found
 -- this is needed to make this constant-space, otherwise we would eat
@@ -239,9 +240,9 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
                   Right ctext -> PartialResult (JValue (AE.String ctext)) next
                   Left _ -> TokFailed
              | resAddData == 0 -> -- One-part string with escaped characters
-                case unescapeText textSection >>= (mapLeft show . decodeUtf8')  of
+                case unescapeText2 textSection of
                   Right ctext -> PartialResult (JValue (AE.String ctext)) next
-                  Left _ -> TokFailed
+                  _ -> TokFailed
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
                             (PartialResult StringEnd next)
         | resType == resStringPartial ->

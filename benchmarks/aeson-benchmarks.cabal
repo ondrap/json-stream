@@ -6,7 +6,7 @@ cabal-version:       >=1.8
 
 library
   hs-source-dirs: ..
-  c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c
+  c-sources:           ../c_lib/lexer.c, ../c_lib/unescape_string.c, ../c_lib/unescape_string2.c
   includes:            ../c_lib/lexer.h
   include-dirs:        ../c_lib
 
@@ -17,6 +17,7 @@ library
     Data.JsonStream.TokenParser
     Data.JsonStream.CLexType
     Data.JsonStream.CLexer
+    Data.JsonStream.Unescape
 
   build-depends:         base >=4.7 && <4.9
                        , bytestring
@@ -27,6 +28,7 @@ library
                        , scientific
 
   ghc-options: -O2 -Wall
+  cc-options: -O2 -Wall
 
 executable aeson-benchmark-jstream-parse
   main-is: JStreamParse.hs

@@ -27,8 +27,7 @@ static const uint8_t utf8d[] = {
   12,36,12,12,12,12,12,12,12,12,12,12,
 };
 
-static uint32_t inline
-decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
+static uint32_t inline decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
   uint32_t type = utf8d[byte];
 
   *codep = (*state != UTF8_ACCEPT) ?
@@ -39,35 +38,134 @@ decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
   return *state;
 }
 
+typedef enum { STANDARD = 0, BACKSLASH, UNICODE1, UNICODE2, UNICODE3, UNICODE4, SURROGATE1, SURROGATE2 } jstates;
+
+static int inline ishexnum(uint32_t c)
+{
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+static uint32_t inline decode_hex(uint32_t c)
+{
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  else if (c >= 'a' && c <= 'f')
+    return c - 'a' + 10;
+  else if (c >= 'A' && c <= 'F')
+    return c - 'A' + 10;
+  return 0; // Should not happen
+}
+
+static int inline isLowSurrogate(uint16_t c)
+{
+  return c >= 0xDC00 && c <= 0xDFFF;
+}
+
+static int inline isHighSurrogate(uint16_t c)
+{
+  return c >= 0xD800 && c <= 0xDBFF;
+}
 
 int
 _js_decode_string(uint16_t *const dest, size_t *destoff,
                   const uint8_t *s, const uint8_t *const srcend)
 {
   uint16_t *d = dest + *destoff;
-  const uint8_t *last = s;
   uint32_t state = 0;
   uint32_t codepoint;
 
-  while (s < srcend) {
-    if (decode(&state, &codepoint, *s++) != UTF8_ACCEPT) {
-      if (state != UTF8_REJECT)
-        continue;
-      return -1;
-    }
+  int surrogate = 0;
+  uint16_t unidata;
 
-    if (codepoint <= 0xffff)
+  #define DISPATCH(label) {\
+    if (s >= srcend) {\
+      *destoff = d - dest;\
+      if (state != UTF8_ACCEPT)\
+        return -1;\
+      return 0;\
+    }\
+    while (decode(&state, &codepoint, *s++) != UTF8_ACCEPT)\
+      if (state == UTF8_REJECT) return -1;\
+    goto label;\
+  }
+  // Optimized version of dispatch when just an ASCII char is expected
+  #define DISPATCH_ASCII(label) {\
+    if (s >= srcend) {\
+      *destoff = d - dest;\
+      if (state != UTF8_ACCEPT)\
+        return -1;\
+      return 0;\
+    }\
+    codepoint = *s++;\
+    goto label;\
+  }
+
+  DISPATCH(standard);
+
+  standard:
+    if (codepoint == '\\')
+      DISPATCH_ASCII(backslash)
+    else if (codepoint <= 0xffff)
       *d++ = (uint16_t) codepoint;
     else {
       *d++ = (uint16_t) (0xD7C0 + (codepoint >> 10));
       *d++ = (uint16_t) (0xDC00 + (codepoint & 0x3FF));
     }
-    last = s;
-  }
+    DISPATCH(standard);
+  backslash:
+    switch (codepoint) {
+      case '"':
+      case '\\':
+      case '/':
+        *d++ = (uint16_t) codepoint;
+        DISPATCH(standard);
+        break;
+      case 'b': *d++ = '\b';DISPATCH(standard);
+      case 'f': *d++ = '\f';DISPATCH(standard);
+      case 'n': *d++ = '\n';DISPATCH(standard);
+      case 'r': *d++ = '\r';DISPATCH(standard);
+      case 't': *d++ = '\t';DISPATCH(standard);
+      case 'u': DISPATCH_ASCII(unicode1);;break;
+      default:
+        return -1;
+    }
+  unicode1:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata = decode_hex(codepoint) << 12;
+    DISPATCH_ASCII(unicode2);
+  unicode2:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint) << 8;
+    DISPATCH_ASCII(unicode3);
+  unicode3:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint) << 4;
+    DISPATCH_ASCII(unicode4);
+  unicode4:
+    if (!ishexnum(codepoint))
+      return -1;
+    unidata |= decode_hex(codepoint);
+    *d++ = (uint16_t) unidata;
 
-  *destoff = d - dest;
-
-  if (state != UTF8_ACCEPT)
-    return -1;
-  return 0;
+    if (surrogate) {
+      if (!isLowSurrogate(unidata))
+        return -1;
+      surrogate = 0;
+    } else if (isHighSurrogate(unidata)) {
+      surrogate = 1;
+      DISPATCH_ASCII(surrogate1);
+    } else if (isLowSurrogate(unidata))
+      return -1;
+    DISPATCH(standard)
+  surrogate1:
+    if (codepoint != '\\')
+      return -1;
+    DISPATCH_ASCII(surrogate2)
+  surrogate2:
+    if (codepoint != 'u')
+      return -1;
+    DISPATCH_ASCII(unicode1)
 }

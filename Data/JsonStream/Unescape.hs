@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns, CPP, ForeignFunctionInterface, GeneralizedNewtypeDeriving, MagicHash,
     UnliftedFFITypes #-}
 
-module Data.JsonStream.Unescape where
+module Data.JsonStream.Unescape (
+  unescapeText2
+) where
 
 import Control.Monad.ST.Unsafe (unsafeIOToST, unsafeSTToIO)
 import Control.Exception (evaluate, try)
@@ -31,8 +33,8 @@ foreign import ccall unsafe "_js_decode_string" c_js_decode
     :: MutableByteArray# s -> Ptr CSize
     -> Ptr Word8 -> Ptr Word8 -> IO CInt
 
-decodeJString :: ByteString -> Text
-decodeJString (PS fp off len) = runText $ \done -> do
+unescapeText' :: ByteString -> Text
+unescapeText' (PS fp off len) = runText $ \done -> do
   let go dest = withForeignPtr fp $ \ptr ->
         with (0::CSize) $ \destOffPtr -> do
           let end = ptr `plusPtr` (off + len)
@@ -48,3 +50,8 @@ decodeJString (PS fp off len) = runText $ \done -> do
   (unsafeIOToST . go) =<< A.new len
  where
   desc = "Data.Text.Internal.Encoding.decodeUtf8: Invalid UTF-8 stream"
+{-# INLINE unescapeText' #-}
+
+unescapeText2 :: ByteString -> Either UnicodeException Text
+unescapeText2 = unsafeDupablePerformIO . try . evaluate . unescapeText'
+{-# INLINE unescapeText2 #-}
