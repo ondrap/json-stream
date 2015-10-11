@@ -42,7 +42,7 @@ json-data/example.json    18000
 json-data/integers.json   4000
 json-data/geometry.json   500
 json-data/numbers.json    3000
-json-data/sigma.json      20
+json-data/sigma.json      60
 json-data/twitter1.json   60000
 json-data/twitter10.json  13000
 json-data/twitter20.json   7500
