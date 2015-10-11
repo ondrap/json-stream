@@ -41,6 +41,9 @@ library
                        , vector
                        , unordered-containers
                        , scientific
+                       , QuickCheck
+                       , quickcheck-unicode
+                       
   default-language:    Haskell2010
 
 
@@ -65,7 +68,8 @@ test-suite spec
                        , hspec
                        , scientific
                        , directory
-
+                       , QuickCheck
+                       , quickcheck-unicode
 
 -- executable spdtest
 --   main-is: spdtest.hs

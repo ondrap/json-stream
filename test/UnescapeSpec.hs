@@ -6,9 +6,13 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as T
 import Data.Either (isLeft)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.Aeson as AE
 
+import Test.QuickCheck
 import Test.Hspec
 import Data.JsonStream.Unescape
+import qualified Test.QuickCheck.Unicode as QUNI
 
 spec :: Spec
 spec = do
@@ -43,10 +47,23 @@ spec = do
       unescapeText "\\ud801a" `shouldSatisfy` isLeft
     it "Fails on uncompleted surrogate 3" $
       unescapeText "\\ud801\\u0012" `shouldSatisfy` isLeft
-  describe "Fails on incorrect data UTF8" $ do
+  describe "Fails on incorrect data UTF8" $
     it "Fails on bad utf-8" $ do
       let txt = "žluťoučký kůň úpěl ďábelské kódy" :: T.Text
       unescapeText (BS.drop 1 $ encodeUtf8 txt) `shouldSatisfy` isLeft
+
+  describe "It correctly decodes aeson encoded string" $
+    it "QuickCheck with aeson encode" $ do
+      let check txt =
+              let encoded = BS.init $ BS.tail (BS.concat $ BSL.toChunks $ AE.encode (AE.String txt))
+              in unescapeText encoded `shouldBe ` Right txt
+      deepCheck check
+
+deepCheck :: (T.Text -> Expectation) -> IO ()
+deepCheck = quickCheckWith (stdArgs { maxSuccess = 10000})
+
+instance Arbitrary T.Text where
+  arbitrary = T.pack <$> QUNI.string
 
 main :: IO ()
 main = hspec spec
