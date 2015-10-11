@@ -1,3 +1,6 @@
+# 0.3.2.3
+- Completely rewritten text unescapes based on text decodeUtf8; fixes some surprising crashes, speed improvements.
+
 # 0.3.2.0
 - Changed string parsing; parsing of escaped strings is now very fast
 - Removed bytestring parser

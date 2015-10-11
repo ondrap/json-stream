@@ -38,8 +38,6 @@ static uint32_t inline decode(uint32_t* state, uint32_t* codep, uint32_t byte) {
   return *state;
 }
 
-typedef enum { STANDARD = 0, BACKSLASH, UNICODE1, UNICODE2, UNICODE3, UNICODE4, SURROGATE1, SURROGATE2 } jstates;
-
 static int inline ishexnum(uint32_t c)
 {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
