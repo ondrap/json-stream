@@ -2,17 +2,20 @@
 
 module UnescapeSpec where
 
-import Data.Text.Encoding (encodeUtf8)
-import qualified Data.Text as T
-import Data.Either (isLeft)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import qualified Data.Aeson as AE
+import           Control.Applicative      ((<$>))
+import qualified Data.Aeson               as AE
+import qualified Data.ByteString          as BS
+import qualified Data.ByteString.Char8    as BSC
+import qualified Data.ByteString.Lazy     as BSL
+import           Data.Either              (isLeft)
+import qualified Data.Text                as T
+import           Data.Text.Encoding       (encodeUtf16BE, encodeUtf8)
+import           Numeric                  (showHex)
 
-import Test.QuickCheck
-import Test.Hspec
-import Data.JsonStream.Unescape
-import qualified Test.QuickCheck.Unicode as QUNI
+import           Data.JsonStream.Unescape
+import           Test.Hspec
+import           Test.QuickCheck
+import qualified Test.QuickCheck.Unicode  as QUNI
 
 spec :: Spec
 spec = do
@@ -52,11 +55,23 @@ spec = do
       let txt = "žluťoučký kůň úpěl ďábelské kódy" :: T.Text
       unescapeText (BS.drop 1 $ encodeUtf8 txt) `shouldSatisfy` isLeft
 
-  describe "It correctly decodes aeson encoded string" $
-    it "QuickCheck with aeson encode" $ do
+  describe "It correctly decodes aeson encoded string" $ do
+    it "QuickCheck with aeson encode - standard UTF8" $ do
       let check txt =
               let encoded = BS.init $ BS.tail (BS.concat $ BSL.toChunks $ AE.encode (AE.String txt))
-              in unescapeText encoded `shouldBe ` Right txt
+              in unescapeText encoded `shouldBe` Right txt
+      deepCheck check
+    it "QuickCheck with aeson encode - \\u encoded data" $ do
+      let check txt = -- Convert everything to \\uXXXX notation
+              let u16chars = BS.concat $ map ((BS.append "\\u" . btohex) . BS.take 2)
+                              $ take (BS.length u16 `div` 2)
+                              $ iterate (BS.drop 2) u16
+                  u16 = encodeUtf16BE txt
+                  btohex cb = BSC.pack $ concatMap tohex $ BS.unpack cb
+                  tohex c
+                    | c < 16 = "0" ++ showHex c ""
+                    | otherwise = showHex c ""
+              in unescapeText u16chars `shouldBe` Right txt
       deepCheck check
 
 deepCheck :: (T.Text -> Expectation) -> IO ()
