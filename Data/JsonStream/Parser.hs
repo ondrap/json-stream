@@ -165,7 +165,7 @@ instance Alternative Parser where
           MoreData (Parser $ \tok -> process (callParse np1 tok) (callParse np2 tok), ntok)
       process (Failed err) _ = Failed err
       process _ (Failed err) = Failed err
-      process _ _ = error "Unexpected error in parallel processing <|>"
+      process _ _ = Failed "Unexpected error in parallel processing <|>"
 
 
 -- | Match items from the first parser, if none is matched, return items
