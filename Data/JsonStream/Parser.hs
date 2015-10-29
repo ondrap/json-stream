@@ -33,8 +33,6 @@ module Data.JsonStream.Parser (
     -- * The @Parser@ type
     Parser
   , ParseOutput(..)
-    -- * Operators
-  , (>^>)
     -- * Parsing functions
   , runParser
   , runParser'
@@ -66,7 +64,6 @@ module Data.JsonStream.Parser (
     -- * Parsing modifiers
   , filterI
   , takeI
-  , toList
   , mapWithFailure
     -- * SAX-like parsers
   , arrayFound
@@ -78,6 +75,7 @@ import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.HashMap.Strict         as HMap
+import           Data.Monoid                 (Monoid, mappend, mempty)
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
@@ -147,16 +145,16 @@ instance Applicative Parser where
       process _ _ _ = Failed "Unexpected error in parallel processing <*>."
 
 
--- | '<|>' will run both parsers in parallel yielding from both as the data comes
+-- | '<>' will run both parsers in parallel yielding from both as the data comes
 --
 -- > json: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
--- > >>> let parser = arrayOf $     "key1" .: (arrayOf value)
--- >                            <|> "key2" .: (arrayOf value)
+-- > >>> let parser = arrayOf $    "key1" .: (arrayOf value)
+-- >                            <> "key2" .: (arrayOf value)
 -- > >>> parseByteString parser json :: [Int]
 -- > [1,2,5,6]
-instance Alternative Parser where
-  empty = ignoreVal
-  (<|>) m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
+instance Monoid (Parser a) where
+  mempty = ignoreVal
+  mappend m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
     where
       process (Yield v np1) p2 = Yield v (process np1 p2)
       process p1 (Yield v np2) = Yield v (process p1 np2)
@@ -173,34 +171,49 @@ instance Alternative Parser where
 -- constant number of items. '.|' is implemented using this operator.
 --
 -- > >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
--- > >>> let parser = arrayOf $ "key1" .: (arrayOf value) >^> "key2" .: (arrayOf value)
+-- > >>> let parser = arrayOf $ "key1" .: (arrayOf value) <|> "key2" .: (arrayOf value)
 -- > >>> parseByteString parser json :: [Int]
 -- > [1,2]
--- > >>> let parser = arrayOf $ "key-non" .: (arrayOf value) >^> "key2" .: (arrayOf value)
+-- > >>> let parser = arrayOf $ "key-non" .: (arrayOf value) <|> "key2" .: (arrayOf value)
 -- > >>> parseByteString parser json :: [Int]
 -- > [5,6]
+--
+-- many - Gather matches and return them as list.
+--
+-- > >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
+-- > >>> let parser = arrayOf $ (,) <$> many ("keys" .: arrayOf integer)
+-- >                                <*> many ("values" .: arrayOf integer)
+-- > >>> parseByteString parser json :: [([Int], [Int])]
+-- > [([1,2],[5,6]),([9,8],[7,6])]
+instance Alternative Parser where
+  empty = ignoreVal
+  m1 <|> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 tok)
+    where
+      -- First returned item -> disable second parser
+      process _ (Yield v np1) _ = Yield v (process [] np1 Nothing)
+      -- First done with disabled second -> exit
+      process _ (Done ctx ntok) Nothing = Done ctx ntok
+      -- Both done but second not disabled -> yield items from the second
+      process lst (Done ctx ntok) (Just (Done {})) = yieldResults (reverse lst) (Done ctx ntok)
+      -- Second yield - remember data
+      process lst np1 (Just (Yield v np2)) = process (v:lst) np1 (Just np2)
+      -- Moredata processing
+      process lst (MoreData (np1, ntok)) Nothing =
+          MoreData (Parser $ \tok -> process lst (callParse np1 tok) Nothing, ntok)
+      process lst (MoreData (np1, ntok)) (Just (MoreData (np2, _))) =
+          MoreData (Parser $ \tok -> process lst (callParse np1 tok) (Just $ callParse np2 tok), ntok)
+      process _ (Failed err) _ = Failed err
+      process _ _ (Just (Failed err)) = Failed err
+      process _ _ _ = Failed "Unexpected error in parallel processing <|>"
 
-(>^>) :: Parser a -> Parser a -> Parser a
-m1 >^> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 tok)
-  where
-    -- First returned item -> disable second parser
-    process _ (Yield v np1) _ = Yield v (process [] np1 Nothing)
-    -- First done with disabled second -> exit
-    process _ (Done ctx ntok) Nothing = Done ctx ntok
-    -- Both done but second not disabled -> yield items from the second
-    process lst (Done ctx ntok) (Just (Done {})) = yieldResults (reverse lst) (Done ctx ntok)
-    -- Second yield - remember data
-    process lst np1 (Just (Yield v np2)) = process (v:lst) np1 (Just np2)
-    -- Moredata processing
-    process lst (MoreData (np1, ntok)) Nothing =
-        MoreData (Parser $ \tok -> process lst (callParse np1 tok) Nothing, ntok)
-    process lst (MoreData (np1, ntok)) (Just (MoreData (np2, _))) =
-        MoreData (Parser $ \tok -> process lst (callParse np1 tok) (Just $ callParse np2 tok), ntok)
-    process _ (Failed err) _ = Failed err
-    process _ _ (Just (Failed err)) = Failed err
-    process _ _ _ = error "Unexpected error in parallel processing >^>"
+  some = filterI (not . null) . many
+  many f = Parser $ \ntok -> loop [] (callParse f ntok)
+    where
+      loop acc (Done ctx ntp) = Yield (reverse acc) (Done ctx ntp)
+      loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
+      loop acc (Yield v np) = loop (v:acc) np
+      loop _ (Failed err) = Failed err
 
-infixl 3 >^>
 
 array' :: (Int -> Parser a) -> Parser a
 array' valparse = Parser $ \tp ->
@@ -336,8 +349,8 @@ aeValue = Parser $ moreData value'
         JValue val -> Yield val (Done "" ntok)
         JInteger val -> Yield (AE.Number $ fromIntegral val) (Done "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
-        ArrayBegin -> AE.Array . Vec.fromList <$> callParse (toList (arrayOf aeValue)) tok
-        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (toList (objectItems aeValue)) tok
+        ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
+        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (many (objectItems aeValue)) tok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
 
 -- | Convert a strict aeson value (no object/array) to a value.
@@ -498,21 +511,6 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         ObjectBegin -> moreData (handleTok (level + 1)) ntok
         StringEnd -> Failed "Internal error - out of order StringEnd"
 
--- | Gather matches and return them as list.
---
--- > >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
--- > >>> let parser = arrayOf $ (,) <$> toList ("keys" .: arrayOf integer)
--- >                                <*> toList ("values" .: arrayOf integer)
--- > >>> parseByteString parser json :: [([Int], [Int])]
--- > [([1,2],[5,6]),([9,8],[7,6])]
-toList :: Parser a -> Parser [a]
-toList f = Parser $ \ntok -> loop [] (callParse f ntok)
-  where
-    loop acc (Done ctx ntp) = Yield (reverse acc) (Done ctx ntp)
-    loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
-    loop acc (Yield v np) = loop (v:acc) np
-    loop _ (Failed err) = Failed err
-
 -- | Let only items matching a condition pass.
 --
 -- > >>> parseByteString (filterI (>5) $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
@@ -556,21 +554,21 @@ infixr 7 .:
 
 -- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
 --
--- > key .:? val = Just <$> key .: val >^> pure Nothing
+-- > key .:? val = optional (key .: val)
 (.:?) :: T.Text -> Parser a -> Parser (Maybe a)
-key .:? val = Just <$> key .: val >^> pure Nothing
+key .:? val = optional (key .: val)
 infixr 7 .:?
 
 -- | Return default value if the parsers on the left hand didn't produce a result.
 --
--- > p .| defval = p >^> pure defval
+-- > p .| defval = p <|> pure defval
 --
 -- The operator works on complete left side, the following statements are equal:
 --
 -- > Record <$>  "key1" .: "nested-key" .: value .| defaultValue
 -- > Record <$> (("key1" .: "nested-key" .: value) .| defaultValue)
 (.|) :: Parser a -> a -> Parser a
-p .| defval = p >^> pure defval
+p .| defval = p <|> pure defval
 infixl 6 .|
 
 
@@ -661,7 +659,7 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 
 -- $constant
 -- Constant space decoding is possible if the grammar does not specify non-constant
--- operations. The non-constant operations are 'value', 'string', 'toList' and in some instances
+-- operations. The non-constant operations are 'value', 'string', 'many' and in some instances
 -- '<*>'.
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
@@ -675,7 +673,7 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 --
 -- Numbers are limited to 200.000 digits. Longer numbers will make the parsing fail.
 --
--- The 'toList' parser works by accumulating all matched values. Obviously, number
+-- The 'many' parser works by accumulating all matched values. Obviously, number
 -- of such values influences the amount of used memory.
 --
 -- The '<*>' operator runs both parsers in parallel and when they are both done, it

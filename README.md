@@ -55,7 +55,7 @@ and the value is *false*. If the value is *true*, we want the parser to return a
 -- | Result of bulk operation
 resultParser :: Parser [(Text, Text)]
 resultParser =    const [] <$> filterI not ("errors" .: bool)
-              >^> toList ("items" .: arrayOf bulkItemError)
+              <|> many ("items" .: arrayOf bulkItemError)
 
 bulkItemError :: Parser (Text, Text)
 bulkItemError = objectWithKey "index" $
@@ -128,8 +128,8 @@ parseByteString :: Parser a -> ByteString -> [a]
 
 -- Use <|> to return both branches
 -- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
->>> let parser = arrayOf $     "key1" .: (arrayOf value)
-                           <|> "key2" .: (arrayOf value)
+>>> let parser = arrayOf $    "key1" .: (arrayOf value)
+                           <> "key2" .: (arrayOf value)
 >>> parse parser test :: [Int]
 [1,2,5,6]
 

@@ -3,6 +3,7 @@ module ParserSpec where
 
 import Control.Applicative
 import Test.Hspec
+import Data.Monoid ((<>))
 import qualified Data.Aeson as AE
 import Data.Aeson (Value(..))
 import qualified Data.ByteString.Char8 as BS
@@ -84,22 +85,22 @@ specObjComb = describe "Object accesors" $ do
         msg = parse parser test :: [(Int, Int)]
     msg `shouldBe` [(5,1),(5,2),(6,1),(6,2)]
 
-  it "<|> test 1" $ do
+  it "<> test 1" $ do
     let test = "[{'key1': [1,2], 'key2': [5,6], 'key3': [8,9]}]"
-        parser = arrayOf $ objectWithKey "key1" (arrayOf value) <|> objectWithKey "key2" (arrayOf value)
+        parser = arrayOf $ objectWithKey "key1" (arrayOf value) <> objectWithKey "key2" (arrayOf value)
         msg = parse parser test :: [Int]
     msg `shouldBe` [1,2,5,6]
 
-  it ">^> returns first items even if second is in previous chunk" $ do
+  it "<|> returns first items even if second is in previous chunk" $ do
     let test = ["{\"error\":1, ", "\"values\":[2,3,4]}"]
         parser =  "values" .: arrayOf integer
-                  >^> "error" .: integer
+                  <|> "error" .: integer
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [2,3,4]
-  it ">^> returns second item if first does not match" $ do
+  it "<|> returns second item if first does not match" $ do
     let test = ["{\"error\":1, ", "\"values\":[true,null,false]}"]
         parser =  "values" .: arrayOf integer
-                  >^> ("error" .: integer)
+                  <|> ("error" .: integer)
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [1]
 
@@ -138,7 +139,7 @@ specEdge = describe "Edge cases" $ do
 
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
-        res = parseByteString (arrayWithIndexOf 0 (objectValues (arrayOf $ pure "x")) <|> arrayWithIndexOf 1 (pure "y") <|> arrayOf (pure "z")) msg1 :: [String]
+        res = parseByteString (arrayWithIndexOf 0 (objectValues (arrayOf $ pure "x")) <> arrayWithIndexOf 1 (pure "y") <> arrayOf (pure "z")) msg1 :: [String]
     res `shouldBe` ["x", "x", "x", "y", "z", "z"]
 
   it "Correctly returns unparsed data 1" $ do
@@ -169,13 +170,13 @@ specEdge = describe "Edge cases" $ do
   it "Handles values in interleaving order" $ do
     let msg1 = BL.fromChunks ["{\"err\":true,\"values\":[1,2,3",   "4,5,6,7]}"]
         parser = (Right <$> objectWithKey "values" (arrayOf value))
-                  <|> (Left <$> objectWithKey "err" value)
+                  <> (Left <$> objectWithKey "err" value)
         res = parseLazyByteString parser msg1 :: [Either Bool Int]
     res `shouldBe` [Right 1,Right 2,Left True,Right 34,Right 5,Right 6,Right 7]
 
 specControl :: Spec
 specControl = describe "Control parser" $ do
-  -- it "toList" $ do
+  -- it "many" $ do
   -- it "fileterI" $ do
   it "takeI limits number of values" $ do
     let test = "[[1,2,3], [4,5,6]]"
@@ -255,7 +256,7 @@ errTests = describe "Tests of previous errors" $ do
 
   it "Parses correctly empty arrays:" $ do
     let test1 = "[]"
-        parser = arrayOf $ toList ("keys" .: arrayOf integer)
+        parser = arrayOf $ many ("keys" .: arrayOf integer)
         res = parse parser test1 :: [[Int]]
     res `shouldBe` []
 
