@@ -126,7 +126,7 @@ parseByteString :: Parser a -> ByteString -> [a]
 >>> parse parser (..json..) :: [(Int, Int)]
 [(6,2),(6,1),(5,2),(5,1)]
 
--- Use <|> to return both branches
+-- Use <> to return both branches
 -- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
 >>> let parser = arrayOf $    "key1" .: (arrayOf value)
                            <> "key2" .: (arrayOf value)

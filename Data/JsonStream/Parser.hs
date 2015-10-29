@@ -178,7 +178,7 @@ instance Monoid (Parser a) where
 -- > >>> parseByteString parser json :: [Int]
 -- > [5,6]
 --
--- many - Gather matches and return them as list.
+-- 'many' - Gather matches and return them as list.
 --
 -- > >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
 -- > >>> let parser = arrayOf $ (,) <$> many ("keys" .: arrayOf integer)
