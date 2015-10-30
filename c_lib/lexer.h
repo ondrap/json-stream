@@ -29,6 +29,7 @@ struct lexer_result {
   int restype;
   int startpos; // Startpos + length should point to unparsed data for } and ]
   int length;
+  int _padding; // 64-bit architectures will align adddata to 8-bytes anyway, make it explicit and hope for best
 
   long adddata; // Additional data to result
 };
