@@ -1,7 +1,6 @@
 # json-stream - Applicative incremental JSON parser for Haskell
 
-[![Build Status](https://travis-ci.org/ondrap/json-stream.svg?branch=master)](https://travis-ci.org/ondrap/json-stream)
-
+[![Build Status](https://travis-ci.org/ondrap/json-stream.svg?branch=master)](https://travis-ci.org/ondrap/json-stream) [![Hackage](https://img.shields.io/hackage/v/json-stream.svg)]()
 
 Most haskellers use the excellent [aeson](https://hackage.haskell.org/package/aeson) library
 to decode and encode JSON structures. Unfortunately, although very fast, this parser
