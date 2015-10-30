@@ -727,9 +727,26 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- The parser tries to do the least amount of work to get the job done, skipping over items that
 -- are not required. General guidelines to get best performance:
 --
--- Do not use the 'value' parser for the whole object if the object is big. Using json-stream
--- parsers will produce better results with less memory. The 'integer' parser was optimized in such
--- a way that the integer numbers skip the conversion to scientific, which is unavoidable in aeson.
+-- Do not use the 'value' parser for the whole object if the object is big. Do not use json-stream
+-- applicative parsing for creating objects if they have lots of records, unless you are skipping
+-- large part of the structure. Every '<*>' causes parallel parsing, too many parallel parsers
+-- kill performance.
+--
+-- > arrayOf value :: Parser MyStructure -- MyStructure with FromJSON instance
+--
+-- will probably behave better than
+--
+-- > arrayOf $ MyStructure <$> "field1" .: string <*> "field2" .: integer <*> .... <*> "field20" .: string
+--
+-- and also better (at least memory-wise) than
+--
+-- > value :: Parser [MyStructure]
+--
+-- unless the structure has hundreths of fields and you are parsing only a substructure.
+--
+-- The 'integer' parser was optimized in such
+-- a way that the integer numbers skip the conversion to 'Scientific', resulting in a slightly
+-- faster speed.
 --
 -- It is possible to use the '*>' operator to filter objects based on a condition, e.g.:
 --

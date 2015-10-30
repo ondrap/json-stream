@@ -4,6 +4,7 @@ Breaking changes (this could *really* break your code):
 - Changed `>^>` to `<|>` - (`Alternative` now really means alternative)
 - Changed `toList` to `many` (Use existing `Alternative` function instead of a custom one)
 - Added `some` function (Alternative, default implementation won't work)
+- C-lexer now supports parsing numbers up to 18 digits (E-notation is not optimized yet)
 
 # 0.3.2.3
 - Completely rewritten text unescapes based on text decodeUtf8; fixes some surprising crashes, speed improvements.
