@@ -113,39 +113,39 @@ parseByteString :: Parser a -> ByteString -> [a]
 [1,2,3]
 
 -- Use <*> for parallel parsing. Order is not important.
--- JSON: [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
+>>> let test = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"} ]"
 >>> let parser = arrayOf $ (,) <$> "name" .: value
                                <*> "age" .: value
->>> parseByteString  parser (..json..) :: [(Text,Int)]
+>>> parseByteString  parser test :: [(Text,Int)]
 [("John",20),("Frank",30)]
 
 -- If you have more results returned from each branch, all are combined.
--- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
+>>> let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
 >>> let parser = arrayOf $ (,) <$> "key2" .: (arrayOf value)
                                <*> "key1" .: (arrayOf value)
->>> parse parser (..json..) :: [(Int, Int)]
+>>> parse parser test :: [(Int, Int)]
 [(6,2),(6,1),(5,2),(5,1)]
 
 -- Use <> to return both branches
--- JSON: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
+let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
 >>> let parser = arrayOf $    "key1" .: (arrayOf value)
                            <> "key2" .: (arrayOf value)
 >>> parse parser test :: [Int]
 [1,2,5,6]
 
 -- objectItems function enriches value with object key
--- JSON: [{"key1": [1,2,3], "key2": [5,6,7]}]
->>> parseByteString (arrayOf $ objectItems value) (..json..):: [(Text, [Int])]
+>>> let test = "[{\"key1\": [1,2,3], \"key2\": [5,6,7]}]"
+>>> parseByteString (arrayOf $ objectItems value) test :: [(Text, [Int])]
 [("key1",[1,2,3]),("key2",[5,6,7])]
->>> parseByteString (arrayOf $ objectItems $ arrayOf value) (..json..) :: [(Text, Int)]
+>>> parseByteString (arrayOf $ objectItems $ arrayOf value) test :: [(Text, Int)]
 [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
 
 -- .:? produces a maybe value; Nothing if match is not found or is null.
 -- .!= converts Maybe back with a default
--- JSON: [{"name":"John", "value": 12}, {"name":"name2"}]
+>>> let test = "[{\"name\":\"John\", \"value\": 12}, {\"name\":\"name2\"}]"
 >>> let parser = arrayOf $ (,) <$> "name"  .: string
                                <*> "value" .:? integer .!= 0
->>> parseByteString parser (..json..) :: [(String,Int)]
+>>> parseByteString parser test :: [(String,Int)]
 [("John",12),("name2",0)]
 
 ```
