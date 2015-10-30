@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternGuards     #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternGuards       #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -407,9 +408,27 @@ number = jvalue cvt (Just . fromIntegral)
 -- | Parse to bounded integer type (not 'Integer').
 -- If you are using integer numbers, use this parser.
 -- It skips the conversion JSON -> 'Scientific' -> 'Int' and uses an 'Int' directly.
-integer :: (Integral i, Bounded i) => Parser i
-integer = jvalue cvt (Just . fromIntegral)
+integer :: forall i. (Integral i, Bounded i) => Parser i
+integer = jvalue cvt clongToBounded
   where
+    clmax = toInteger (maxBound :: CLong)
+    clmin = toInteger (minBound :: CLong)
+    imax = toInteger (maxBound :: i)
+    imin = toInteger (minBound :: i)
+    -- Int is generally CLong, so we get this
+    clongIsSmaller = clmax <= imax && clmin >= imin
+    -- If partial, we have to convert to Integer to do the checking
+    clongIsPartial = clmax < imax || clmin > imin
+
+    inBounds num
+      | clongIsPartial = toInteger num <= imax && toInteger num >= imin
+      | otherwise = num <= fromIntegral (maxBound :: i) && num >= fromIntegral (minBound :: i)
+
+    clongToBounded :: CLong -> Maybe i
+    clongToBounded num
+      | clongIsSmaller || inBounds num = Just (fromIntegral num)
+      | otherwise = Nothing
+
     cvt (AE.Number num)
       | isInteger num = toBoundedInteger num
     cvt _ = Nothing

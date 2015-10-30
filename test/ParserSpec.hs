@@ -14,6 +14,8 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as Vec
 import qualified Data.HashMap.Strict as HMap
 import System.Directory (getDirectoryContents)
+import Data.Int
+import Data.Word
 
 import Data.JsonStream.Parser
 
@@ -215,6 +217,23 @@ specControl = describe "Control parser" $ do
     let test = "[1,2,null,\"test\",null,3,[],{}]"
         res = parse (arrayOf jNull) test :: [()]
     length res `shouldBe` 2
+  it "correctly ignores out-of-bounds values for bounded integer" $ do
+    let test = "[-9999999999999999999999999,-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 9999999999999999999999999, 4294967295]"
+    let res1 = parse (arrayOf value) test :: [Integer]
+    res1 `shouldBe` [-9999999999999999999999999,-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 9999999999999999999999999, 4294967295]
+
+    let res2 = parse (arrayOf integer) test :: [Int]
+    res2 `shouldBe` [-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 4294967295]
+
+    let res3 = parse (arrayOf integer) test :: [Word64]
+    res3 `shouldBe` [0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 4294967295]
+
+    let res4 = parse (arrayOf integer) test :: [Int32]
+    res4 `shouldBe` [-9999999,-30000,-10000,0,10000,80000,9999,9999999]
+
+    let res5 = parse (arrayOf integer) test :: [Word32]
+    res5 `shouldBe` [0,10000,80000,9999,9999999, 4294967295]
+
 
 -- Tests of things that were found to be buggy
 errTests :: Spec
