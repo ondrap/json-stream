@@ -72,21 +72,28 @@ instance Storable Header where
     pokeByteOff ptr (5 * sizeOf hdrCurrentState) hdrResultNum
     pokeByteOff ptr (6 * sizeOf hdrCurrentState) hdrResultLimit
 
+-- | Hardcoded result record size (see lexer.h)
+resultRecSize :: Int
+resultRecSize = 4 * sizeOf (undefined :: CInt) + sizeOf (undefined :: CLong)
+
 peekResultField :: Int -> Int -> ResultPtr -> Int
 peekResultField n fieldno fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (recsize * n + fieldno * isize) :: IO CInt)
+    fromIntegral <$> (peekByteOff ptr (resultRecSize * n + fieldno * isize) :: IO CInt)
   where
     isize = sizeOf (undefined :: CInt)
-    recsize = isize * 4
+
+peekResultAddData :: Int -> ResultPtr -> CLong
+peekResultAddData n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr ->
+    fromIntegral <$> (peekByteOff ptr (resultRecSize * n + 4 * isize) :: IO CLong)
+  where
+    isize = sizeOf (undefined :: CInt)
 
 peekResultType :: Int -> ResultPtr -> LexResultType
 peekResultType n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
   withForeignPtr (unresPtr fptr) $ \ptr ->
-    LexResultType <$> peekByteOff ptr (recsize * n)
-  where
-    isize = sizeOf (undefined :: CInt)
-    recsize = isize * 4
+    LexResultType <$> peekByteOff ptr (resultRecSize * n)
 
 foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
@@ -97,7 +104,7 @@ callLex bs hdr = unsafeDupablePerformIO $ -- Using Dupable PerformIO should be s
     poke hdrptr (hdr{hdrResultNum=0, hdrLength=fromIntegral $ BS.length bs})
 
     bsptr <- unsafeUseAsCString bs return
-    resptr <- mallocForeignPtrBytes (fromIntegral (hdrResultLimit hdr) * sizeOf (undefined :: CInt) * 4)
+    resptr <- mallocForeignPtrBytes (fromIntegral (hdrResultLimit hdr) * resultRecSize)
     res <- withForeignPtr resptr $ \resptr' ->
       lexJson bsptr hdrptr resptr'
 
@@ -173,7 +180,7 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
       let resType = peekResultType n resptr
           resStartPos = peekResultField n 1 resptr
           resLength = peekResultField n 2 resptr
-          resAddData = peekResultField n 3 resptr
+          resAddData = peekResultAddData n resptr
           next = parse (n + 1)
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs

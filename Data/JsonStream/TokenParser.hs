@@ -7,10 +7,11 @@ module Data.JsonStream.TokenParser (
 
 import qualified Data.Aeson            as AE
 import qualified Data.ByteString.Char8 as BS
+import           Foreign.C.Types
 
 data Element = ArrayBegin | ArrayEnd BS.ByteString | ObjectBegin | ObjectEnd BS.ByteString
                | StringContent BS.ByteString | StringEnd
-               | JValue AE.Value | JInteger Int
+               | JValue AE.Value | JInteger CLong
                deriving (Show, Eq)
 
 -- | Public interface for parsing JSON tokens.

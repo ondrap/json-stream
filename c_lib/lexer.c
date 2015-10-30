@@ -116,8 +116,8 @@ int handle_number(const char *input, struct lexer *lexer, struct lexer_result *r
   int startposition = lexer->position;
 
   // Try to compute the number fitting to int - 32-bit=9, 64-bit=18
-  int maxdigits = sizeof(int) == 8 ? 18 : 9;
-  int computedNumber = 0;
+  int maxdigits = sizeof(long) == 8 ? 18 : 9;
+  long computedNumber = 0;
   int digits = 0;
   int gotDot = 0;
   int dotDigits = 0;

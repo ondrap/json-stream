@@ -38,6 +38,7 @@ def runtimes(count, filename, times=1):
         yield run(count, filename)
 
 info = '''
+json-data/buffer-builder.json 500
 json-data/example.json    18000
 json-data/integers.json   4000
 json-data/geometry.json   500

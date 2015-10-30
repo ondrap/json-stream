@@ -80,6 +80,7 @@ import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
+import           Foreign.C.Types
 
 import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
@@ -355,7 +356,7 @@ aeValue = Parser $ moreData value'
 
 -- | Convert a strict aeson value (no object/array) to a value.
 -- Non-matching type is ignored and not parsed (unlike 'value')
-jvalue :: (AE.Value -> Maybe a) -> (Int -> Maybe a) -> Parser a
+jvalue :: (AE.Value -> Maybe a) -> (CLong -> Maybe a) -> Parser a
 jvalue convert cvtint = Parser (moreData value')
   where
     value' tok el ntok =

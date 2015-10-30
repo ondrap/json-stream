@@ -30,7 +30,7 @@ struct lexer_result {
   int startpos; // Startpos + length should point to unparsed data for } and ]
   int length;
 
-  int adddata; // Additional data to result
+  long adddata; // Additional data to result
 };
 
 struct lexer {

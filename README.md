@@ -74,7 +74,7 @@ can be easily twice as fast, especially on larger structures.
 Json-stream is in streaming mode much friendlier to the GC,
 which makes the performance difference even bigger; however even when json-stream is used
 as an aeson replacement (`value` parser), there can be a performance gain (running aeson benchmarks
-has shown that json-stream is ~1.8x faster).
+has shown that json-stream is generally about twice as fast).
 
 Using json-stream parser instead of aeson `value` evades the need to build the structure
 using aeson `Value` and then converting it to the user-requested structure. Instead
