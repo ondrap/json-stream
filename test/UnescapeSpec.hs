@@ -58,7 +58,7 @@ spec = do
   describe "It correctly decodes aeson encoded string" $ do
     it "QuickCheck with aeson encode - standard UTF8" $ do
       let check txt =
-              let encoded = BS.init $ BS.tail (BS.concat $ BSL.toChunks $ AE.encode (AE.String txt))
+              let encoded = BS.init $ BS.tail (BSL.toStrict $ AE.encode (AE.String txt))
               in unescapeText encoded `shouldBe` Right txt
       deepCheck check
     it "QuickCheck with aeson encode - \\u encoded data" $ do
