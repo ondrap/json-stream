@@ -56,6 +56,7 @@ test-suite doctest
   c-sources:           c_lib/lexer.c, c_lib/unescape_string.c
   includes:            c_lib/lexer.h
   include-dirs:        c_lib
+  cc-options:          -fPIC
   Build-Depends:        base >= 4.7 && <4.9
                        , doctest >= 0.9.3
                        , bytestring
