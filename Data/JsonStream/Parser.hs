@@ -119,12 +119,11 @@ yieldResults values end = foldr Yield end values
 -- | '<*>' will run both parsers in parallel and combine results. It
 -- behaves as a list functor (produces all combinations), but the typical
 -- use is:
---
--- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
--- > >>> let parser = arrayOf $ (,) <$> "name" .: string
--- >                                <*> "age"  .: integer
--- > >>> parseByteString parser text :: [(Text,Int)]
--- > [("John",20),("Frank",30)]
+-- >>> :set -XOverloadedStrings
+-- >>> let text = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"}]"
+-- >>> let parser = arrayOf $ (,) <$> "name" .: string <*> "age"  .: integer
+-- >>> parseByteString parser text :: [(T.Text,Int)]
+-- [("John",20),("Frank",30)]
 instance Applicative Parser where
   pure x = Parser $ \tok -> process (callParse ignoreVal tok)
     where
@@ -149,11 +148,11 @@ instance Applicative Parser where
 
 -- | '<>' will run both parsers in parallel yielding from both as the data comes
 --
--- > json: [{"key1": [1,2], "key2": [5,6], "key3": [8,9]}]
--- > >>> let parser = arrayOf $    "key1" .: (arrayOf value)
--- >                            <> "key2" .: (arrayOf value)
--- > >>> parseByteString parser json :: [Int]
--- > [1,2,5,6]
+-- >>> :m +Data.Monoid
+-- >>> let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
+-- >>> let parser = arrayOf $ "key1" .: (arrayOf value) <> "key2" .: (arrayOf value)
+-- >>> parseByteString parser test :: [Int]
+-- [1,2,5,6]
 instance Monoid (Parser a) where
   mempty = ignoreVal
   mappend m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
@@ -172,21 +171,20 @@ instance Monoid (Parser a) where
 -- from the second parser. Constant-space if second parser returns
 -- constant number of items. '.|' is implemented using this operator.
 --
--- > >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
--- > >>> let parser = arrayOf $ "key1" .: (arrayOf value) <|> "key2" .: (arrayOf value)
--- > >>> parseByteString parser json :: [Int]
--- > [1,2]
--- > >>> let parser = arrayOf $ "key-non" .: (arrayOf value) <|> "key2" .: (arrayOf value)
--- > >>> parseByteString parser json :: [Int]
--- > [5,6]
+-- >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
+-- >>> let parser = arrayOf $ "key1" .: (arrayOf value) <|> "key2" .: (arrayOf value)
+-- >>> parseByteString parser json :: [Int]
+-- [1,2]
+-- >>> let parser = arrayOf $ "key-non" .: (arrayOf value) <|> "key2" .: (arrayOf value)
+-- >>> parseByteString parser json :: [Int]
+-- [5,6]
 --
 -- 'many' - Gather matches and return them as list.
 --
--- > >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
--- > >>> let parser = arrayOf $ (,) <$> many ("keys" .: arrayOf integer)
--- >                                <*> many ("values" .: arrayOf integer)
--- > >>> parseByteString parser json :: [([Int], [Int])]
--- > [([1,2],[5,6]),([9,8],[7,6])]
+-- >>> let json = "[{\"keys\":[1,2], \"values\":[5,6]}, {\"keys\":[9,8], \"values\":[7,6]}]"
+-- >>> let parser = arrayOf $ (,) <$> many ("keys" .: arrayOf integer) <*> many ("values" .: arrayOf integer)
+-- >>> parseByteString parser json :: [([Int], [Int])]
+-- [([1,2],[5,6]),([9,8],[7,6])]
 instance Alternative Parser where
   empty = ignoreVal
   m1 <|> m2 = Parser $ \tok -> process [] (callParse m1 tok) (Just $ callParse m2 tok)
@@ -259,9 +257,9 @@ objectFound = elemFound ObjectBegin
 -- | Generate start/end values when an array is found, in between run a parser.
 -- The inner parser is not run if an array is not found.
 --
--- > >>> let test = "[[1,2,3],true,[],false,{\"key\":1}]" :: ByteString
--- > >>> parseByteString (arrayOf (arrayFound 10 20 (1 .! integer))) test :: [Int]
--- > [10,2,20,10,20]
+-- >>> let test = "[[1,2,3],true,[],false,{\"key\":1}]" :: BS.ByteString
+-- >>> parseByteString (arrayOf (arrayFound 10 20 (1 .! integer))) test :: [Int]
+-- [10,2,20,10,20]
 arrayFound :: a -> a -> Parser a -> Parser a
 arrayFound = elemFound ArrayBegin
 
@@ -463,9 +461,9 @@ nullable valparse = Parser (moreData value')
 
 -- | Match 'FromJSON' value. Calls parseJSON on the parsed value.
 --
--- > >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6]}]"
--- > >>> parseByteString (arrayOf value) json :: [Value]
--- > [Object fromList [("key2",Array (fromList [Number 5.0,Number 6.0])),("key1",Array (fromList [Number 1.0,Number 2.0]))]]
+-- >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6]}]"
+-- >>> parseByteString (arrayOf value) json :: [AE.Value]
+-- [Object (fromList [("key2",Array [Number 5.0,Number 6.0]),("key1",Array [Number 1.0,Number 2.0])])]
 value :: AE.FromJSON a => Parser a
 value = Parser $ \ntok -> loop (callParse aeValue ntok)
   where
@@ -479,8 +477,8 @@ value = Parser $ \ntok -> loop (callParse aeValue ntok)
 
 -- | Take maximum n matching items.
 --
--- > >>> parseByteString (takeI 3 $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
--- > [1,2,3]
+-- >>> parseByteString (takeI 3 $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
+-- [1,2,3]
 takeI :: Int -> Parser a -> Parser a
 takeI num valparse = Parser $ \tok -> loop num (callParse valparse tok)
   where
@@ -533,8 +531,8 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
 
 -- | Let only items matching a condition pass.
 --
--- > >>> parseByteString (filterI (>5) $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
--- > [6,7,8,9]
+-- >>> parseByteString (filterI (>5) $ arrayOf integer) "[1,2,3,4,5,6,7,8,9,0]" :: [Int]
+-- [6,7,8,9]
 filterI :: (a -> Bool) -> Parser a -> Parser a
 filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
   where
@@ -565,9 +563,9 @@ mapWithFailure mapping =
 
 -- | Synonym for 'objectWithKey'. Matches key in an object. The '.:' operators can be chained.
 --
--- > >>> let json = "{\"key1\": {\"nested-key\": 3}}"
--- > >>> parseByteString ("key1" .: "nested-key" .: integer) json :: [Int]
--- > [3]
+-- >>> let json = "{\"key1\": {\"nested-key\": 3}}"
+-- >>> parseByteString ("key1" .: "nested-key" .: integer) json :: [Int]
+-- [3]
 (.:) :: T.Text -> Parser a -> Parser a
 (.:) = objectWithKey
 infixr 7 .:
@@ -594,8 +592,8 @@ infixl 6 .|
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
 --
--- > >>> parseByteString (arrayOf (1 .! bool)) "[ [1,true,null], [2,false], [3]]" :: [Bool]
--- > [True,False]
+-- >>> parseByteString (arrayOf (1 .! bool)) "[ [1,true,null], [2,false], [3]]" :: [Bool]
+-- [True,False]
 (.!) :: Int -> Parser a -> Parser a
 (.!) = arrayWithIndexOf
 infixr 7 .!
@@ -623,11 +621,11 @@ runParser parser = runParser' parser BS.empty
 
 -- | Parse a bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
 --
--- > parseByteString (arrayOf integer) "[1,2,3,4]" :: [Int]
--- > [1,2,3,4]
+-- >>> parseByteString (arrayOf integer) "[1,2,3,4]" :: [Int]
+-- [1,2,3,4]
 --
--- > parseByteString (arrayOf ("name" .: string)) "[{\"name\":\"KIWI\"}, {\"name\":\"BIRD\"}]"
--- > ["KIWI","BIRD"]
+-- >>> parseByteString (arrayOf ("name" .: string)) "[{\"name\":\"KIWI\"}, {\"name\":\"BIRD\"}]"
+-- ["KIWI","BIRD"]
 parseByteString :: Parser a -> BS.ByteString -> [a]
 parseByteString parser startdata = loop (runParser' parser startdata)
   where
@@ -650,25 +648,25 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 
 -- $use
 --
--- > >>> parseByteString value "[1,2,3]" :: [[Int]]
--- > [[1,2,3]]
+-- >>> parseByteString value "[1,2,3]" :: [[Int]]
+-- [[1,2,3]]
+--
 -- The 'value' parser matches any 'AE.FromJSON' value. The above command is essentially
 -- identical to the aeson decode function; the parsing process can generate more
 -- objects, therefore the results is [a].
 --
 -- Example of json-stream style parsing:
 --
--- > >>> parseByteString (arrayOf integer) "[1,2,3]" :: [Int]
--- > [1,2,3]
+-- >>> parseByteString (arrayOf integer) "[1,2,3]" :: [Int]
+-- [1,2,3]
 --
 -- Parsers can be combinated using  '<*>' and '<|>' operators. The parsers are
 -- run in parallel and return combinations of the parsed values.
 --
--- > JSON: text = [{"name": "John", "age": 20}, {"age": 30, "name": "Frank"} ]
--- > >>> let parser = arrayOf $ (,) <$> "name" .: string
--- >                                <*> "age"  .: integer
--- > >>> parseByteString  parser text :: [(Text,Int)]
--- > [("John",20),("Frank",30)]
+-- >>> let text = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"} ]"
+-- >>> let parser = arrayOf $ (,) <$> "name" .: string <*> "age"  .: integer
+-- >>> parseByteString  parser text :: [(T.Text,Int)]
+-- [("John",20),("Frank",30)]
 --
 -- When parsing larger values, it is advisable to use lazy ByteStrings. The parsing
 -- is then more memory efficient as less lexical state
@@ -716,12 +714,11 @@ parseLazyByteString parser input = loop chunks (runParser parser)
 -- but in a slightly different albeit more natural way. New operators are '.!' for
 -- array access and '.|' to handle missing values.
 --
--- > -- JSON: [{"name": "test1", "value": 1}, {"name": "test2", "value": null}, {"name": "test3"}]
--- > >>> let person = (,) <$> "name" .: string
--- > >>>                  <*> "value" .: integer .| (-1)
--- > >>> let people = arrayOf person
--- > >>> parseByteString people (..JSON..) :: [(Text, Int)]
--- > [("test1",1),("test2",-1),("test3",-1)]
+-- >>> let test = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}]"
+-- >>> let person = (,) <$> "name" .: string <*> "value" .: integer .| (-1)
+-- >>> let people = arrayOf person
+-- >>> parseByteString people test :: [(T.Text, Int)]
+-- [("test1",1),("test2",-1),("test3",-1)]
 
 -- $performance
 -- The parser tries to do the least amount of work to get the job done, skipping over items that
