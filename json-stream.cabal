@@ -45,6 +45,7 @@ library
                        , scientific
 
   default-language:    Haskell2010
+  Ghc-Options:         -Wall -fwarn-incomplete-uni-patterns
 
 
 test-suite doctest
