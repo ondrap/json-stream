@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PatternGuards       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -39,6 +40,11 @@ module Data.JsonStream.Parser (
   , runParser'
   , parseByteString
   , parseLazyByteString
+    -- * Aeson in-place replacement functions
+  , decode
+  , eitherDecode
+  , decodeStrict
+  , eitherDecodeStrict
     -- * FromJSON parser
   , value
   , string
@@ -71,12 +77,17 @@ module Data.JsonStream.Parser (
   , objectFound
 ) where
 
+#if !MIN_VERSION_bytestring(0,10,6)
+import           Data.Monoid                 (Monoid, mappend, mempty)
+#endif
+
 import           Control.Applicative
 import qualified Data.Aeson                  as AE
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Lazy        as BL
+import qualified Data.ByteString.Char8       as BS
+import qualified Data.ByteString.Lazy.Char8  as BL
+import qualified Data.ByteString.Lazy.Internal as BL
+import           Data.Char                   (isSpace)
 import qualified Data.HashMap.Strict         as HMap
-import           Data.Monoid                 (Monoid, mappend, mempty)
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
@@ -116,9 +127,11 @@ instance Functor Parser where
 yieldResults :: [a] -> ParseResult a -> ParseResult a
 yieldResults values end = foldr Yield end values
 
--- | '<*>' will run both parsers in parallel and combine results. It
--- behaves as a list functor (produces all combinations), but the typical
+-- | '<*>' will run both parsers in parallel and combine results.
+--
+-- It behaves as a list functor (produces all combinations), but the typical
 -- use is:
+--
 -- >>> :set -XOverloadedStrings
 -- >>> let text = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"}]"
 -- >>> let parser = arrayOf $ (,) <$> "name" .: string <*> "age"  .: integer
@@ -636,15 +649,63 @@ parseByteString parser startdata = loop (runParser' parser startdata)
 
 -- | Parse a lazy bytestring, generate lazy list of parsed values. If an error occurs, throws an exception.
 parseLazyByteString :: Parser a -> BL.ByteString -> [a]
-parseLazyByteString parser input = loop chunks (runParser parser)
+parseLazyByteString parser input = loop input (runParser parser)
   where
-    chunks = BL.toChunks input
-    loop [] (ParseNeedData _) = error "Not enough data."
-    loop (dta:rest) (ParseNeedData np) = loop rest (np dta)
+    loop BL.Empty (ParseNeedData _) = error "Not enough data."
+    loop (BL.Chunk dta rest) (ParseNeedData np) = loop rest (np dta)
     loop _ (ParseDone _) = []
     loop _ (ParseFailed err) = error err
     loop rest (ParseYield v np) = v : loop rest np
 
+
+-- | Deserialize a JSON value from lazy 'BL.ByteString'.
+--
+-- If this fails due to incomplete or invalid input, 'Nothing' is returned.
+--
+-- The input must consist solely of a JSON document, with no trailing data except for whitespace.
+decode :: AE.FromJSON a => BL.ByteString -> Maybe a
+decode bs =
+  case eitherDecode bs of
+    Right val -> Just val
+    Left _ -> Nothing
+
+-- | Like 'decode' but returns an error message when decoding fails.
+eitherDecode :: AE.FromJSON a => BL.ByteString -> Either String a
+eitherDecode bs = loop bs (runParser value)
+  where
+    loop BL.Empty (ParseNeedData _) = Left "Not enough data."
+    loop (BL.Chunk dta rest) (ParseNeedData np) = loop rest (np dta)
+    loop _ (ParseDone _) = Left "Nothing parsed."
+    loop _ (ParseFailed err) = Left err
+    loop rest (ParseYield v next) = checkExit v next rest
+
+    checkExit v (ParseDone srest) rest
+      | BS.all isSpace srest && BL.all isSpace rest = Right v
+      | otherwise = Left "Data followed by non-whitespace characters."
+    checkExit _ (ParseYield _ _) _ = Left "Multiple value parses?"
+    checkExit _ (ParseFailed err) _ = Left err
+    checkExit _ (ParseNeedData _) BL.Empty = Left "Incomplete json structure."
+    checkExit v (ParseNeedData cont) (BL.Chunk dta rest) = checkExit v (cont dta) rest
+
+-- | Like 'decode', but on strict 'BS.ByteString'
+decodeStrict :: AE.FromJSON a => BS.ByteString -> Maybe a
+decodeStrict bs =
+  case eitherDecodeStrict bs of
+    Right val -> Just val
+    Left _ -> Nothing
+
+-- | Like 'eitherDecode', but on strict 'BS.ByteString'
+eitherDecodeStrict :: AE.FromJSON a => BS.ByteString -> Either String a
+eitherDecodeStrict bs =
+    case runParser' value bs of
+      ParseYield next v -> checkExit v next
+      ParseNeedData _ -> Left "Incomplete json structure."
+      ParseFailed err -> Left err
+      ParseDone _ -> Left "No data found."
+  where
+    checkExit (ParseDone rest) v
+      | BS.all isSpace rest = Right v
+    checkExit _ _ = Left "Data folowed by non-whitespace characters."
 
 -- $use
 --

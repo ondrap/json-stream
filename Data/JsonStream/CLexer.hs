@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE OverloadedStrings        #-}
@@ -9,7 +10,10 @@ module Data.JsonStream.CLexer (
   , unescapeText
 ) where
 
+#if !MIN_VERSION_bytestring(0,10,6)
 import           Control.Applicative         ((<$>))
+#endif
+
 import           Control.Monad               (when)
 import qualified Data.Aeson                  as AE
 import qualified Data.ByteString             as BSW
