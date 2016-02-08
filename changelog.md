@@ -1,3 +1,6 @@
+# 0.4.1.0
+Added aeson-compatibile encode/decode functions.
+
 # 0.4.0.0
 Breaking changes (this could *really* break your code):
 - Changed `<|>` to `<>` (`Monoid` is better for 'appending' than `Alternative`)
