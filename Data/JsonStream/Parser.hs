@@ -237,11 +237,11 @@ array' valparse = Parser $ \tp ->
     (TokFailed) -> Failed "Array - token failed"
   where
     nextitem _ _ (ArrayEnd ctx) ntok = Done ctx ntok
-    nextitem i tok _ _ = arrcontent i (callParse (valparse i) tok)
+    nextitem !i tok _ _ = arrcontent i (callParse (valparse i) tok)
 
-    arrcontent i (Done _ ntp) = moreData (nextitem (i+1)) ntp
-    arrcontent i (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent i . np), ntp)
-    arrcontent i (Yield v np) = Yield v (arrcontent i np)
+    arrcontent !i (Done _ ntp) = moreData (nextitem (i+1)) ntp
+    arrcontent !i (MoreData (Parser np, ntp)) = MoreData (Parser (arrcontent i . np), ntp)
+    arrcontent !i (Yield v np) = Yield v (arrcontent i np)
     arrcontent _ (Failed err) = Failed err
 
 -- | Match all items of an array.

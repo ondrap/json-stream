@@ -1,3 +1,6 @@
+# 0.4.1.1
+Fixed memory leak in arrayOf
+
 # 0.4.1.0
 Added aeson-compatibile encode/decode functions.
 
