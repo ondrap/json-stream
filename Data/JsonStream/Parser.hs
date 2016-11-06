@@ -749,7 +749,7 @@ eitherDecodeStrict bs =
 -- $constant
 -- Constant space decoding is possible if the grammar does not specify non-constant
 -- operations. The non-constant operations are 'value', 'string', 'many' and in some instances
--- '<*>'.
+-- '<*>' and '<|>'
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
 -- 'parseJSON' method. The AST can consume a lot of memory before it is rejected

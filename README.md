@@ -24,8 +24,8 @@ check for JSON syntax and the behaviour on incorrect JSON input is undefined (it
 but this is needed for constant-space parsing). **The result on badly formed input is undefined,
 the parser does not guarantee failing on bad input.**
 
-- The parser generally does not fail. If the data does not match, the parser silently ignores it.
-  The failures should be only syntax errors in JSON.
+- The parser will fail if the parser does not match. This makes it somewhat more consistent
+  with other libraries behaviour, but it allows you to handle incorrect schema better.
 - The ',' and ':' characters in the lexer are treated as white-space.
 - When a value is not needed to be parsed, it is parsed by a parser counting braces and brackets.
   Anything can happen, the parser just waits for the sum of openings to equal sum of closings.
