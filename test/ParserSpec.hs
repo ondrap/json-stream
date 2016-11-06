@@ -1,23 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 module ParserSpec where
 
-import Control.Applicative
-import Test.Hspec
-import Data.Monoid ((<>))
-import qualified Data.Aeson as AE
-import Data.Aeson (Value(..))
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Text as T
-import Control.Monad (forM_)
-import Data.Text.Encoding (encodeUtf8)
-import qualified Data.Vector as Vec
-import qualified Data.HashMap.Strict as HMap
-import System.Directory (getDirectoryContents)
-import Data.Int
-import Data.Word
+import           Control.Applicative
+import           Control.Exception      (evaluate)
+import           Control.Monad          (forM_)
+import           Data.Aeson             (Value (..))
+import qualified Data.Aeson             as AE
+import qualified Data.ByteString.Char8  as BS
+import qualified Data.ByteString.Lazy   as BL
+import qualified Data.HashMap.Strict    as HMap
+import           Data.Int
+import           Data.Monoid            ((<>))
+import qualified Data.Text              as T
+import           Data.Text.Encoding     (encodeUtf8)
+import qualified Data.Vector            as Vec
+import           Data.Word
+import           System.Directory       (getDirectoryContents)
+import           Test.Hspec
 
-import Data.JsonStream.Parser
+import           Data.JsonStream.Parser
 
 -- During the tests the single quotes are replaced with double quotes in the strings as
 -- otherwise it would be unreadable in haskell
@@ -53,7 +54,7 @@ specBase = describe "Basic parsing" $ do
     res `shouldBe` [True, False]
 
   it "Parses string values with special chracters" $ do
-    let test = "['" `BS.append` (encodeUtf8 "žluť")  `BS.append` "', '\\n\\b\\r\\'', '\\u0041\\u0078\\u0161']"
+    let test = "['" `BS.append` encodeUtf8 "žluť"  `BS.append` "', '\\n\\b\\r\\'', '\\u0041\\u0078\\u0161']"
         res = parse (arrayOf value) test :: [T.Text]
     res `shouldBe` ["\382lu\357","\n\b\r\"","Ax\353"]
 
@@ -108,13 +109,13 @@ specObjComb = describe "Object accesors" $ do
 
   it "arrayFound generates events" $ do
     let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
-        parser = arrayOf (arrayFound 10 20 (1 .! integer))
+        parser = arrayOf (arrayFound 10 20 (1 .! integer <|> mempty) <|> mempty)
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [10,2,20,10,20]
 
   it "objectFound generates events" $ do
     let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
-        parser = arrayOf (objectFound 10 20 ("key" .: integer))
+        parser = arrayOf (objectFound 10 20 ("key" .: integer) <|> mempty)
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [10,1,20]
 
@@ -188,50 +189,50 @@ specControl = describe "Control parser" $ do
 
   it "ignores non-match for array" $ do
     let test = "[1,2,[3,4,5]]"
-        parser = arrayOf (arrayOf value)
+        parser = arrayOf (arrayOf value <|> mempty)
         res = parse parser test :: [Int]
     res `shouldBe` [3,4,5]
 
   it "ignores non-match for object" $ do
     let test = "[1,2,{\"test\": 3}]"
-        parser = arrayOf $ objectWithKey "test" value
+        parser = arrayOf (objectWithKey "test" value <|> mempty)
         res = parse parser test :: [Int]
     res `shouldBe` [3]
   it "ignores non-match for string" $ do
     let test = "[1,2,[\"a\", 3, null], \"test\",{}, \"test2\"]"
-        res = parse (arrayOf string) test :: [T.Text]
+        res = parse (arrayOf (string <|> mempty)) test :: [T.Text]
     res `shouldBe` ["test", "test2"]
   it "ignores non-match for number" $ do
     let test = "[{\"aa\":3},2,3,\"test\",4, \"test2\"]"
-        res = parse (arrayOf integer) test :: [Int]
+        res = parse (arrayOf (integer <|> mempty)) test :: [Int]
     res `shouldBe` [2,3,4]
   it "ignores non-match for bool" $ do
     let test = "[1,[],true,\"test\",{\"t\":true}, \"test2\",false]"
-        res = parse (arrayOf bool) test :: [Bool]
+        res = parse (arrayOf (bool <|> mempty)) test :: [Bool]
     res `shouldBe` [True, False]
   it "nullable sets values correctly" $ do
     let test = "[1,2,null,\"test\",null,3,[],{}]"
-        res = parse (arrayOf $ nullable integer) test :: [Maybe Int]
+        res = parse (arrayOf (nullable integer <|> mempty)) test :: [Maybe Int]
     res `shouldBe` [Just 1, Just 2, Nothing, Nothing, Just 3]
   it "matches null values" $ do
     let test = "[1,2,null,\"test\",null,3,[],{}]"
-        res = parse (arrayOf jNull) test :: [()]
+        res = parse (arrayOf (jNull <|> mempty)) test :: [()]
     length res `shouldBe` 2
   it "correctly ignores out-of-bounds values for bounded integer" $ do
     let test = "[-9999999999999999999999999,-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 9999999999999999999999999, 4294967295]"
-    let res1 = parse (arrayOf value) test :: [Integer]
+    let res1 = parse (arrayOf (value <|> mempty)) test :: [Integer]
     res1 `shouldBe` [-9999999999999999999999999,-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 9999999999999999999999999, 4294967295]
 
-    let res2 = parse (arrayOf integer) test :: [Int]
+    let res2 = parse (arrayOf (integer <|> mempty)) test :: [Int]
     res2 `shouldBe` [-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 4294967295]
 
-    let res3 = parse (arrayOf integer) test :: [Word64]
+    let res3 = parse (arrayOf (integer <|> mempty)) test :: [Word64]
     res3 `shouldBe` [0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 4294967295]
 
-    let res4 = parse (arrayOf integer) test :: [Int32]
+    let res4 = parse (arrayOf (integer <|> mempty)) test :: [Int32]
     res4 `shouldBe` [-9999999,-30000,-10000,0,10000,80000,9999,9999999]
 
-    let res5 = parse (arrayOf integer) test :: [Word32]
+    let res5 = parse (arrayOf (integer <|> mempty)) test :: [Word32]
     res5 `shouldBe` [0,10000,80000,9999,9999999, 4294967295]
 
 
@@ -296,14 +297,14 @@ errTests = describe "Tests of previous errors" $ do
   it "Parses correctly handles empty strings when sliced:" $ do
     let test1 = "[\"\", \"\", true]"
         onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
-        parser = arrayOf bool
+        parser = arrayOf (bool <|> mempty)
         res = parseLazyByteString parser onechar :: [Bool]
     res `shouldBe` [True]
 
   it "Correctly parses safeString when sliced" $ do
     let test1 = "[\"looooooooooong\", \"short\"]"
         onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
-        parser = arrayOf (safeString 6)
+        parser = arrayOf (safeString 6 <|> mempty)
         res = parseLazyByteString parser onechar :: [T.Text]
     res `shouldBe` ["short"]
 
@@ -364,6 +365,43 @@ aeCompareBench = describe "Compare benchmark jsons" $
       let Just resAeson = AE.decode (BL.fromChunks [test])
       resStream `shouldBe` resAeson
 
+specErrorControl :: Spec
+specErrorControl = describe "Check error behaviour" $ do
+    it "Doesn't fail on right error if left is ok" $ do
+        let parser = arrayOf (string <|> mempty)
+                    <|> arrayOf (mapWithFailure (const (Left "Right - Error")) (integer :: Parser Int)) :: Parser T.Text
+        parseLazyByteString parser (chunked "[12, \"test\", \"test2\"]") `shouldBe` ["test", "test2"]
+    it "Doesn't fail on left error if right is ok" $ do
+      let parser =  arrayOf (mapWithFailure (const (Left "Right - Error")) (integer :: Parser Int))
+                    <|> arrayOf (string <|> mempty)
+      parseLazyByteString parser (chunked "[12,\"test\",\"test2\",\"test3\"]") `shouldBe` ["test", "test2", "test3"]
+    it "Fails on arrayOf with no array input" $ do
+        let parser = arrayOf value :: Parser Int
+        evaluate (parseLazyByteString parser "{}") `shouldThrow` anyException
+    it "Fails on objectOf with no object input" $ do
+        let parser = objectValues value :: Parser Int
+        evaluate (parseLazyByteString parser "[1,2]") `shouldThrow` anyException
+    it "Fails on missing object key" $ do
+        let parser = "name" .: integer :: Parser Int
+        evaluate (parseLazyByteString parser "{\"test\":12}") `shouldThrow` anyException
+    it "Failes on missing array index" $ do
+        let parser = 3 .! bool
+        evaluate (parseLazyByteString parser "[1]") `shouldThrow` anyException
+    it "Fails on failed value parsing" $ do
+        let parser = "name" .: value :: Parser Int
+        evaluate (parseLazyByteString parser "{\"name\":\"test\"}") `shouldThrow` anyException
+    it "Fails on failed number parsing" $ do
+        let parser = "name" .: integer :: Parser Int
+        evaluate (parseLazyByteString parser "{\"name\":\"test\"}") `shouldThrow` anyException
+    it "Fails on failed bool parsing" $ do
+        let parser = "name" .: bool
+        evaluate (parseLazyByteString parser "{\"name\":\"test\"}") `shouldThrow` anyException
+    it "Fails on failed string parsing" $ do
+        let parser = "name" .: string
+        evaluate (parseLazyByteString parser "{\"name\":12}") `shouldThrow` anyException
+  where
+    chunked = BL.fromChunks . map BS.singleton . BS.unpack
+
 spec :: Spec
 spec = do
   specBase
@@ -373,6 +411,7 @@ spec = do
   errTests
   aeCompare
   aeCompareBench
+  specErrorControl
 
 main :: IO ()
 main = hspec spec
