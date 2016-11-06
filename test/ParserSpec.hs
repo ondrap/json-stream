@@ -10,7 +10,7 @@ import qualified Data.ByteString.Char8  as BS
 import qualified Data.ByteString.Lazy   as BL
 import qualified Data.HashMap.Strict    as HMap
 import           Data.Int
-import           Data.Monoid            ((<>))
+import           Data.Monoid            ((<>), mempty)
 import qualified Data.Text              as T
 import           Data.Text.Encoding     (encodeUtf8)
 import qualified Data.Vector            as Vec
