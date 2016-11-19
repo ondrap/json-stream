@@ -1,3 +1,6 @@
+# 0.4.1.3
+Fix windows build.
+
 # 0.4.1.2
 Slightly more strictness in arrayOf.
 
