@@ -1,3 +1,9 @@
+# 0.5
+Breaking changes
+- Changed <|> to better handle failure
+- All combinators now *fail* if they don't match. E.g. `arrayOf integer` will fail
+  on `[true,false]`. To ignore value, use `arrayOf (integer <|> mempty)`.
+
 # 0.4.1.2
 Slightly more strictness in arrayOf.
 
