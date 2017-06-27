@@ -15,7 +15,7 @@ remarkable easy. Just wondering, why nobody came with this earlier...
 
 Standard aeson library reads the whole input, creates an object in memory representing
 the JSON structure which is then converted into proper values using FromJSON instances.
-This library is compatibile with aeson - you can immediately use FromJSON instances almost without
+This library is compatible with aeson - you can immediately use FromJSON instances almost without
 any change in code and enjoy incremental parsing. The real strength is in the applicative interface
 which allows to parse only those parts of JSON that are of interest while skipping what is not needed.
 
