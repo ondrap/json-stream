@@ -36,7 +36,7 @@ library
   c-sources:           c_lib/lexer.c, c_lib/unescape_string.c
   includes:            c_lib/lexer.h
   include-dirs:        c_lib
-  build-depends:         base >=4.7 && <4.10
+  build-depends:         base >=4.7 && <4.11
                        , bytestring
                        , text
                        , aeson >= 0.7
