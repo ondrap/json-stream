@@ -23,7 +23,7 @@ import           Foreign.Ptr                (Ptr, plusPtr)
 import           Foreign.Storable           (peek)
 import           GHC.Base                   (MutableByteArray#)
 
-foreign import ccall unsafe "_js_decode_string" c_js_decode
+foreign import ccall unsafe "_jstream_decode_string" c_js_decode
     :: MutableByteArray# s -> Ptr CSize
     -> Ptr Word8 -> Ptr Word8 -> IO CInt
 
@@ -43,7 +43,7 @@ unescapeText' (PS fp off len) = runText $ \done -> do
           loop (ptr `plusPtr` off)
   (unsafeIOToST . go) =<< A.new len
  where
-  desc = "Data.Text.Internal.Encoding.decodeUtf8: Invalid UTF-8 stream"
+  desc = "Data.JsonStream.Unescape.unescapeText': Invalid UTF-8 stream"
 {-# INLINE unescapeText' #-}
 
 unescapeText :: ByteString -> Either UnicodeException Text

@@ -66,8 +66,8 @@ static int inline isHighSurrogate(uint16_t c)
 
 // Decode, return non-zero value on error
 int
-_js_decode_string(uint16_t *const dest, size_t *destoff,
-                  const uint8_t *s, const uint8_t *const srcend)
+_jstream_decode_string(uint16_t *const dest, size_t *destoff,
+                       const uint8_t *s, const uint8_t *const srcend)
 {
   uint16_t *d = dest + *destoff;
   uint32_t state = 0;

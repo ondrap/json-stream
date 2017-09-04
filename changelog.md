@@ -1,3 +1,9 @@
+# 0.4.1.5
+Renamed `_js_decode_string` function to avoid conflict with `aeson`.
+
+# 0.4.1.4
+Added support for GHC 8.2.
+
 # 0.4.1.3
 Fix windows build.
 
