@@ -180,7 +180,9 @@ instance Monoid (Parser a) where
       process _ _ = Failed "Unexpected error in parallel processing <|>"
       
 #if MIN_VERSION_base(4,11,0)
-instance Semigroup (Parser a)
+instance Semigroup (Parser a) where
+  (<>) = mappend
+  {-# INLINE (<>) #-}
 #endif
 
 -- | Match items from the first parser, if none is matched, return items
