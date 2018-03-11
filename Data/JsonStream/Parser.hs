@@ -81,6 +81,10 @@ module Data.JsonStream.Parser (
 import           Data.Monoid                 (Monoid, mappend, mempty)
 #endif
 
+#if MIN_VERSION_base(4,10,0)
+import           Data.Semigroup                 (Semigroup(..))
+#endif
+
 import           Control.Applicative
 import qualified Data.Aeson                  as AE
 import qualified Data.ByteString.Char8       as BS
@@ -166,24 +170,27 @@ instance Applicative Parser where
 -- >>> let parser = arrayOf $ "key1" .: (arrayOf value) <> "key2" .: (arrayOf value)
 -- >>> parseByteString parser test :: [Int]
 -- [1,2,5,6]
+#if MIN_VERSION_base(4,10,0)
 instance Monoid (Parser a) where
   mempty = ignoreVal
-  mappend m1 m2 = Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
+  mappend = (<>)
+instance Semigroup (Parser a) where
+  (<>) m1 m2 =
+#else
+instance Monoid (Parser a) where
+  mempty = ignoreVal
+  mappend m1 m2 =
+#endif
+    Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
     where
       process (Yield v np1) p2 = Yield v (process np1 p2)
       process p1 (Yield v np2) = Yield v (process p1 np2)
-      process (Done ctx ntok) (Done {}) = Done ctx ntok
+      process (Done ctx ntok) Done {} = Done ctx ntok
       process (MoreData (np1, ntok)) (MoreData (np2, _)) =
           MoreData (Parser $ \tok -> process (callParse np1 tok) (callParse np2 tok), ntok)
       process (Failed err) _ = Failed err
       process _ (Failed err) = Failed err
       process _ _ = Failed "Unexpected error in parallel processing <|>"
-      
-#if MIN_VERSION_base(4,11,0)
-instance Semigroup (Parser a) where
-  (<>) = mappend
-  {-# INLINE (<>) #-}
-#endif
 
 -- | Match items from the first parser, if none is matched, return items
 -- from the second parser. Constant-space if second parser returns
