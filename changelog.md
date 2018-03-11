@@ -1,3 +1,6 @@
+# 0.4.2.0
+Added Semigroup instance, compatibility with base-4.11
+
 # 0.4.1.5
 Renamed `_js_decode_string` function to avoid conflict with `aeson`.
 
