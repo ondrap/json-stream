@@ -2,11 +2,21 @@
 
 [![Build Status](https://travis-ci.org/ondrap/json-stream.svg?branch=master)](https://travis-ci.org/ondrap/json-stream) [![Hackage](https://img.shields.io/hackage/v/json-stream.svg)](https://hackage.haskell.org/package/json-stream)
 
+# When to use this library
+
+- use [aeson](https://hackage.haskell.org/package/aeson) if you can; compile aeson with `cffi` flag if you need better performance
+- use `json-stream` if you
+  - need streaming
+  - need every bit of performance (do profile; aeson is quite fast these days)
+  - do not care that parsing may not fail on malformed JSON data
+  - do not need advanced error reporting; json-stream tends to skip data that
+    doesn't fit parsing rules (this might be implemented better in the future)
+
+# Intro
+
 Most haskellers use the excellent [aeson](https://hackage.haskell.org/package/aeson) library
 to decode and encode JSON structures. Unfortunately, although very fast, this parser
-must read the whole structure into memory. At a first sight it seemed that creating
-an incremental JSON parser would be very hard thing to do; it turned out to be
-remarkable easy. Just wondering, why nobody came with this earlier...
+must read the whole structure into memory. Json-stream allows incremental parsing.
 
 > Parsing performance is generally better than aeson, sometimes significantly better.
 > Json-stream uses a small and fast C lexer to parse the JSON into tokens. This results
@@ -67,22 +77,24 @@ bulkItemError = objectWithKey "index" $
 ```
 ## Performance
 
-Json-stream is fast. The crude lexing is done by a C-optimized code in batches, the
-lexed pieces are then parsed using the user-specified parser. Compared to aeson, parsing
-can be easily twice as fast, especially on larger structures.
-Json-stream is in streaming mode much friendlier to the GC,
-which makes the performance difference even bigger; however even when json-stream is used
-as an aeson replacement (`value` parser), there can be a performance gain (running aeson benchmarks
-has shown that json-stream is generally about twice as fast).
+The crude lexing is done by a C-optimized code in batches, the
+lexed pieces are then parsed using the user-specified parser. Json-stream
+is generally slightly faster than aeson. It is significantly faster
+in the following scenarios:
+
+- parsing numbers
+- parsing strings when aeson is not compiled with `cffi` flag
+  (the `cffi` flag of aeson enables fast text decoding borrowed from json-stream)
+- parsing only subset of big JSON structures
+
+Json-stream is in streaming mode is also much friendlier to the GC.
 
 Using json-stream parser instead of aeson `value` evades the need to build the structure
 using aeson `Value` and then converting it to the user-requested structure. Instead
 the structure is built on the fly directly during the parsing phase.
 
 Json-stream can optimize certain scenarios. If not all data from the input stream is
-required, it is skipped by the parsers. Using `integer` parser
-with bounded integer types (not `Integer`) avoids converting all numbers to
-`Scientific` type.
+required, it is skipped by the parsers.
 
 ## Constant space parsing
 

@@ -232,13 +232,12 @@ instance Alternative Parser where
       process _ _ _ = Failed "Unexpected error in parallel processing <|>"
 
   some = filterI (not . null) . many
-  many f = Parser $ \ntok -> loop [] (callParse f ntok)
+  many f = Parser $ \ntok -> loop id (callParse f ntok)
     where
-      loop acc (Done ctx ntp) = Yield (reverse acc) (Done ctx ntp)
+      loop acc (Done ctx ntp) = Yield (acc []) (Done ctx ntp)
       loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
-      loop acc (Yield v np) = loop (v:acc) np
+      loop acc (Yield v np) = loop (\nxt -> acc (v : nxt)) np
       loop _ (Failed err) = Failed err
-
 
 array' :: (Int -> Parser a) -> Parser a
 array' valparse = Parser $ \tp ->
@@ -375,8 +374,17 @@ aeValue = Parser $ moreData value'
         JInteger val -> Yield (AE.Number $ fromIntegral val) (Done "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
-        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (many (objectItems aeValue)) tok
+        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (manyReverse (objectItems aeValue)) tok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
+
+-- | Optimized function for aeson objects - evades reversing the objects
+manyReverse :: Parser a -> Parser [a]
+manyReverse f = Parser $ \ntok -> loop [] (callParse f ntok)
+  where
+    loop acc (Done ctx ntp) = Yield acc (Done ctx ntp)
+    loop acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
+    loop acc (Yield v np) = loop (v : acc) np
+    loop _ (Failed err) = Failed err
 
 -- | Convert a strict aeson value (no object/array) to a value.
 -- Non-matching type is ignored and not parsed (unlike 'value')

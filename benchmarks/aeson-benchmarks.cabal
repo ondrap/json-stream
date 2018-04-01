@@ -19,7 +19,7 @@ library
     Data.JsonStream.CLexer
     Data.JsonStream.Unescape
 
-  build-depends:         base >=4.7 && <4.9
+  build-depends:         base >=4.7 && <5
                        , bytestring
                        , text
                        , aeson (>=0.7)
