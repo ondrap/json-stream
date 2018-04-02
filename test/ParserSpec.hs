@@ -222,7 +222,7 @@ specControl = describe "Control parser" $ do
     let res1 = parse (arrayOf value) test :: [Integer]
     res1 `shouldBe` [-9999999999999999999999999,-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 18446744073709551000, 9999999999999999999999999, 4294967295]
 
-    let res2 = parse (arrayOf integer) test :: [Int]
+    let res2 = parse (arrayOf integer) test :: [Int64]
     res2 `shouldBe` [-999999999999,-9999999,-30000,-10000,0,10000,80000,9999,9999999, 999999999999, 4294967295]
 
     let res3 = parse (arrayOf integer) test :: [Word64]

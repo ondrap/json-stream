@@ -133,7 +133,7 @@ parseNumber tnumber = do
     let
       (csign, r1) = parseSign tnumber :: (Int, BS.ByteString)
       ((num, numdigits), r2) = parseDecimal r1 :: ((Integer, Int), BS.ByteString)
-      ((frac, frdigits), r3) = parseFract r2 :: ((Int, Int), BS.ByteString)
+      ((frac, frdigits), r3) = parseFract r2 :: ((Integer, Int), BS.ByteString)
       (texp, rest) = parseE r3
     when (numdigits == 0 || not (BS.null rest)) Nothing
     let dpart = fromIntegral csign * (num * (10 ^ frdigits) + fromIntegral frac) :: Integer
