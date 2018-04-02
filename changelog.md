@@ -1,3 +1,11 @@
+# 0.4.2.3
+
+Fix 32-bit number parsing.
+
+# 0.4.2.2
+
+Speed optimization of `many` and aeson object.
+
 # 0.4.2.0
 Added Semigroup instance, compatibility with base-4.11
 
