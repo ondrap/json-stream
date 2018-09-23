@@ -1,3 +1,7 @@
+# 0.4.2.4
+
+Fix compiling with new ghc.
+
 # 0.4.2.3
 
 Fix 32-bit number parsing.
