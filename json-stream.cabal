@@ -64,7 +64,7 @@ test-suite doctest
   includes:            c_lib/lexer.h
   include-dirs:        c_lib
   cc-options:          -fPIC
-  Build-Depends:         base >= 4.7 && <4.12
+  Build-Depends:         base >= 4.7 && <5
                        , doctest >= 0.9.3
                        , bytestring
                        , text
@@ -93,7 +93,7 @@ test-suite spec
   hs-source-dirs:      test, .
   default-language:    Haskell2010
   ghc-options:         -Wall
-  build-depends:         base >=4.7 && <4.12
+  build-depends:         base >=4.7 && <5
                        , bytestring
                        , text
                        , aeson
@@ -112,7 +112,7 @@ test-suite spec
 --   c-sources:           c_lib/lexer.c
 --   include-dirs:        c_lib
 --   default-language:    Haskell2010
---   build-depends:         base >=4.7 && <4.8
+--   build-depends:         base >=4.7 && <5
 --                        , bytestring
 --                        , text
 --                        , aeson
