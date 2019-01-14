@@ -20,7 +20,6 @@ import qualified Data.ByteString             as BSW
 import qualified Data.ByteString.Char8       as BS
 import           Data.ByteString.Unsafe      (unsafeUseAsCString)
 import           Data.Scientific             (Scientific, scientific)
-import           Data.Text.Encoding          (decodeUtf8')
 import           Data.Text.Internal.Unsafe   (inlinePerformIO)
 import           Foreign
 import           Foreign.C.Types
@@ -28,7 +27,7 @@ import           System.IO.Unsafe            (unsafeDupablePerformIO)
 
 import           Data.JsonStream.CLexType
 import           Data.JsonStream.TokenParser (Element (..), TokenResult (..))
-import           Data.JsonStream.Unescape
+import           Data.JsonStream.Unescape (unescapeText)
 
 -- | Limit for maximum size of a number; fail if larger number is found
 -- this is needed to make this constant-space, otherwise we would eat
@@ -174,7 +173,7 @@ parseNumber tnumber = do
 
 -- | Parse particular result
 parseResults :: TempData -> (CInt, Header, Int, ResultPtr) -> TokenResult
-parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescount, resptr) = parse 0
+parseResults TempData{tmpNumbers=tmpNumbers, tmpBuffer=bs} (err, hdr, rescount, resptr) = parse 0
   where
     newtemp = TempData bs hdr (err /= 0)
     -- We iterate the items from CNT to 1, 1 is the last element, CNT is the first
@@ -218,14 +217,8 @@ parseResults (TempData {tmpNumbers=tmpNumbers, tmpBuffer=bs}) (err, hdr, rescoun
                        Just num -> PartialResult (JValue (AE.Number num)) next
                        Nothing -> TokFailed
         | resType == resString ->
-          if | resAddData == -1 -> -- One-part string without escaped characters
-                case decodeUtf8' textSection  of
-                  Right ctext -> PartialResult (JValue (AE.String ctext)) next
-                  Left _ -> TokFailed
-             | resAddData == 0 -> -- One-part string with escaped characters
-                case unescapeText textSection of
-                  Right ctext -> PartialResult (JValue (AE.String ctext)) next
-                  _ -> TokFailed
+          if | resAddData == -1 || resAddData == 0 -> -- One-part string without escaped characters; with escaped
+                PartialResult (StringRaw textSection) next
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
                             (PartialResult StringEnd next)
         | resType == resStringPartial ->
@@ -237,7 +230,7 @@ estResultLimit :: BS.ByteString -> CInt
 estResultLimit dta = fromIntegral $ 20 + BS.length dta `quot` 5
 
 getNextResult :: TempData -> TokenResult
-getNextResult tmp@(TempData {..})
+getNextResult tmp@TempData{..}
   | tmpError = TokFailed
   | hdrPosition tmpHeader < hdrLength tmpHeader = parseResults tmp (callLex tmpBuffer tmpHeader)
   | otherwise = TokMoreData newdata

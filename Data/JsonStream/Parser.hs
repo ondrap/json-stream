@@ -307,12 +307,17 @@ object' once valparse = Parser $ \tp ->
     (PartialResult ObjectBegin ntp) -> moreData (nextitem False) ntp
     (PartialResult _ _) -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok) -> MoreData (object' once valparse, ntok)
-    (TokFailed) -> Failed "Array - token failed"
+    TokFailed -> Failed "Array - token failed"
   where
     nextitem _ _ (ObjectEnd ctx) ntok = Done ctx ntok
-    nextitem yielded _ (JValue (AE.String key)) ntok = objcontent yielded (callParse (valparse key) ntok)
+    nextitem yielded _ (JValue (AE.String key)) ntok =
+      objcontent yielded (callParse (valparse key) ntok)
+    nextitem yielded _ (StringRaw bs) ntok = 
+      case unescapeText bs of
+        Right t -> objcontent yielded (callParse (valparse t) ntok)
+        Left e -> Failed (show e)
     nextitem yielded _ (StringContent str) ntok =
-          objcontent yielded $ moreData (getLongKey [str] (BS.length str)) ntok
+      objcontent yielded $ moreData (getLongKey [str] (BS.length str)) ntok
     nextitem _ _ el _ = Failed $ "Object - unexpected item: " ++ show el
 
     -- If we already yielded and should yield once, ignore the rest of the object
@@ -373,6 +378,9 @@ aeValue = Parser $ moreData value'
         JValue val -> Yield val (Done "" ntok)
         JInteger val -> Yield (AE.Number $ fromIntegral val) (Done "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
+        StringRaw bs -> case unescapeText bs of
+              Right t -> Yield (AE.String t) (Done "" ntok)
+              Left e -> Failed (show e)
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
         ObjectBegin -> AE.Object . HMap.fromList <$> callParse (manyReverse (objectItems aeValue)) tok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
@@ -409,6 +417,10 @@ longString mbounds = Parser $ moreData (handle (BS.empty :) 0)
     handle acc !len tok el ntok =
       case el of
         JValue (AE.String str) -> Yield str (Done "" ntok)
+        StringRaw bs -> 
+          case unescapeText bs of
+            Right t -> Yield t (Done "" ntok)
+            Left e -> Failed (show e)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
@@ -546,6 +558,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
 
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok
+    handleTok 0 _ (StringRaw _) ntok = Done "" ntok
     handleTok 0 _ (JInteger _) ntok = Done "" ntok
     handleTok 0 _ (ArrayEnd _) _ = Failed "ArrayEnd in ignoreval on 0 level"
     handleTok 0 _ (ObjectEnd _) _ = Failed "ObjectEnd in ignoreval on 0 level"
@@ -556,6 +569,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         JValue _ -> moreData (handleTok level) ntok
         JInteger _ -> moreData (handleTok level) ntok
         StringContent _ -> moreData (handleLongString level) ntok
+        StringRaw _ -> moreData (handleTok level) ntok
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
         ArrayBegin -> moreData (handleTok (level + 1)) ntok
