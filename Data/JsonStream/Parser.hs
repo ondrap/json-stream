@@ -413,11 +413,11 @@ jvalue convert cvtint = Parser (moreData value')
 
 
 longByteString :: Maybe Int -> Parser BS.ByteString
-longByteString mbounds = Parser $ moreData (handle (BS.empty :) 0)
+longByteString mbounds = Parser $ moreData (handle id 0)
   where
     handle acc !len tok el ntok =
       case el of
-        JValue (AE.String _) -> Failed "INTERNAL ERROR! - got decoded JValue intsead of string"
+        JValue (AE.String _) -> Failed "INTERNAL ERROR! - got decoded JValue instead of string"
         StringRaw bs -> Yield bs (Done "" ntok)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
@@ -441,7 +441,7 @@ safeByteString limit = longByteString (Just limit)
 
 -- | Match a possibly bounded string roughly limited by a limit
 longString :: Maybe Int -> Parser T.Text
-longString mbounds = Parser $ moreData (handle (BS.empty :) 0)
+longString mbounds = Parser $ moreData (handle id 0)
   where
     handle acc !len tok el ntok =
       case el of
