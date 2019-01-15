@@ -118,6 +118,12 @@ specObjComb = describe "Object accesors" $ do
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [10,1,20]
 
+  it "Has working byteString parser" $ do
+    let test = ["[\"abcd\\n\\rxyz\"]"]
+        parser = arrayOf byteString :: Parser BS.ByteString
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [BS.ByteString]
+    msg `shouldBe` ["abcd\\n\\rxyz"]
+
 specEdge :: Spec
 specEdge = describe "Edge cases" $ do
   it "Correct incremental parsing 1" $ do

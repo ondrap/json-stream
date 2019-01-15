@@ -48,6 +48,7 @@ module Data.JsonStream.Parser (
     -- * FromJSON parser
   , value
   , string
+  , byteString
     -- * Constant space parsers
   , safeString
   , number
@@ -55,6 +56,7 @@ module Data.JsonStream.Parser (
   , real
   , bool
   , jNull
+  , safeByteString
     -- * Structure operators
   , (.:)
   , (.:?)
@@ -409,6 +411,33 @@ jvalue convert cvtint = Parser (moreData value')
           | otherwise -> Done "" ntok
         _ -> callParse ignoreVal tok
 
+
+longByteString :: Maybe Int -> Parser BS.ByteString
+longByteString mbounds = Parser $ moreData (handle (BS.empty :) 0)
+  where
+    handle acc !len tok el ntok =
+      case el of
+        JValue (AE.String _) -> Failed "INTERNAL ERROR! - got decoded JValue intsead of string"
+        StringRaw bs -> Yield bs (Done "" ntok)
+        StringContent str
+          | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
+                          -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
+          | otherwise     -> moreData (handle (acc . (str:)) (len + BS.length str)) ntok
+        StringEnd -> Yield (BS.concat (acc [])) (Done "" ntok)
+        _ ->  callParse ignoreVal tok
+
+
+-- | Parse raw bytestring value (json string expected), skip parsing otherwise.
+-- The returned value is not unescaped.
+byteString :: Parser BS.ByteString
+byteString = longByteString Nothing
+
+-- | Stops parsing string after the limit is reached. The string will not be matched
+-- if it exceeds the size. The size is the size of escaped string including escape
+-- characters. 
+-- The return value is not unescaped.
+safeByteString :: Int -> Parser BS.ByteString
+safeByteString limit = longByteString (Just limit)
 
 -- | Match a possibly bounded string roughly limited by a limit
 longString :: Maybe Int -> Parser T.Text
