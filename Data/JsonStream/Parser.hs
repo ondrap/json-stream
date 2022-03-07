@@ -93,7 +93,13 @@ import qualified Data.ByteString.Char8       as BS
 import qualified Data.ByteString.Lazy.Char8  as BL
 import qualified Data.ByteString.Lazy.Internal as BL
 import           Data.Char                   (isSpace)
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap           as AEK
+import qualified Data.Aeson.Key              as AEK
+import           Data.Bifunctor              (first)
+#else
 import qualified Data.HashMap.Strict         as HMap
+#endif
 import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
@@ -375,6 +381,11 @@ objectWithKey name valparse = object' True itemFn
 aeValue :: Parser AE.Value
 aeValue = Parser $ moreData value'
   where
+#if MIN_VERSION_aeson(2,0,0)
+    tomap = AEK.fromList . map (first AEK.fromText)
+#else
+    tomap = HMap.fromList
+#endif
     value' tok el ntok =
       case el of
         JValue val -> Yield val (Done "" ntok)
@@ -384,7 +395,7 @@ aeValue = Parser $ moreData value'
               Right t -> Yield (AE.String t) (Done "" ntok)
               Left e -> Failed (show e)
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
-        ObjectBegin -> AE.Object . HMap.fromList <$> callParse (manyReverse (objectItems aeValue)) tok
+        ObjectBegin -> AE.Object . tomap <$> callParse (manyReverse (objectItems aeValue)) tok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
 
 -- | Optimized function for aeson objects - evades reversing the objects
