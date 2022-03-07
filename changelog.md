@@ -1,3 +1,8 @@
+# 0.4.3.0
+
+- Aeson 2.0 compatibility
+- Added support for raw bytestring
+
 # 0.4.2.4
 
 Fix compiling with new ghc.

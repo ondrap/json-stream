@@ -1,5 +1,5 @@
 name:                json-stream
-version:             0.4.2.4
+version:             0.4.3.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
@@ -41,7 +41,7 @@ library
   build-depends:         base >=4.7 && <5
                        , bytestring
                        , text
-                       , aeson >= 0.7
+                       , aeson >= 0.7 && < 2.1
                        , vector
                        , unordered-containers
                        , scientific
