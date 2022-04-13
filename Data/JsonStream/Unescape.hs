@@ -1,6 +1,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE UnliftedFFITypes         #-}
+{-# LANGUAGE CPP                      #-}
 
 module Data.JsonStream.Unescape (
   unescapeText
@@ -33,7 +34,7 @@ unescapeText' (PS fp off len) = runText $ \done -> do
         with (0::CSize) $ \destOffPtr -> do
           let end = ptr `plusPtr` (off + len)
               loop curPtr = do
-                res <- c_js_decode (A.maBA dest) destOffPtr curPtr end
+                res <- c_js_decode (getByteArray dest) destOffPtr curPtr end
                 case res of
                   0 -> do
                     n <- peek destOffPtr
@@ -44,6 +45,11 @@ unescapeText' (PS fp off len) = runText $ \done -> do
   (unsafeIOToST . go) =<< A.new len
  where
   desc = "Data.JsonStream.Unescape.unescapeText': Invalid UTF-8 stream"
+#if MIN_VERSION_text(2,0,0)
+  getByteArray (A.MutableByteArray arr) = arr
+#else
+  getByteArray = A.maBA
+#endif
 {-# INLINE unescapeText' #-}
 
 unescapeText :: ByteString -> Either UnicodeException Text
