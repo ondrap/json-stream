@@ -74,6 +74,7 @@ module Data.JsonStream.Parser (
   , filterI
   , takeI
   , mapWithFailure
+  , manyReverse
     -- * SAX-like parsers
   , arrayFound
   , objectFound
@@ -398,7 +399,9 @@ aeValue = Parser $ moreData value'
         ObjectBegin -> AE.Object . tomap <$> callParse (manyReverse (objectItems aeValue)) tok
         _ -> Failed ("aeValue - unexpected token: " ++ show el)
 
--- | Optimized function for aeson objects - evades reversing the objects
+-- | Identical to @fmap 'reverse' . 'many'@ but more efficient.
+-- If you don't care about the order of the results but plan to fully evaluate the list,
+-- this can be slightly more efficient than 'many' as it avoids the accumulating thunks.
 manyReverse :: Parser a -> Parser [a]
 manyReverse f = Parser $ \ntok -> loop [] (callParse f ntok)
   where
