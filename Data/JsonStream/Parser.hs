@@ -47,6 +47,7 @@ module Data.JsonStream.Parser (
   , eitherDecodeStrict
     -- * FromJSON parser
   , value
+  , valueWith
   , string
   , byteString
     -- * Constant space parsers
@@ -89,6 +90,7 @@ import           Data.Semigroup                 (Semigroup(..))
 
 import           Control.Applicative
 import qualified Data.Aeson                  as AE
+import qualified Data.Aeson.Types            as AE
 import qualified Data.ByteString.Char8       as BS
 import qualified Data.ByteString.Lazy.Char8  as BL
 import qualified Data.ByteString.Lazy.Internal as BL
@@ -544,21 +546,25 @@ nullable valparse = Parser (moreData value')
     value' _ (JValue AE.Null) ntok = Yield Nothing (Done "" ntok)
     value' tok _ _ = callParse (Just <$> valparse) tok
 
--- | Match 'FromJSON' value. Calls parseJSON on the parsed value.
---
--- >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6]}]"
--- >>> parseByteString (arrayOf value) json :: [AE.Value]
--- [Object (fromList [("key2",Array [Number 5.0,Number 6.0]),("key1",Array [Number 1.0,Number 2.0])])]
-value :: AE.FromJSON a => Parser a
-value = Parser $ \ntok -> loop (callParse aeValue ntok)
+-- | Match values with a 'AE.Parser'.  Returns values for which the given parser succeeds.
+valueWith :: (AE.Value -> AE.Parser a) -> Parser a
+valueWith jparser = Parser $ \ntok -> loop (callParse aeValue ntok)
   where
     loop (Done ctx ntp) = Done ctx ntp
     loop (Failed err) = Failed err
     loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
     loop (Yield v np) =
-      case AE.fromJSON v of
+      case AE.parse jparser v of
         AE.Error _ -> loop np
         AE.Success res -> Yield res (loop np)
+
+-- | Match 'AE.FromJSON' value. Equivalent to @'valueWith' 'AE.parseJSON'@.
+--
+-- >>> let json = "[{\"key1\": [1,2], \"key2\": [5,6]}]"
+-- >>> parseByteString (arrayOf value) json :: [AE.Value]
+-- [Object (fromList [("key2",Array [Number 5.0,Number 6.0]),("key1",Array [Number 1.0,Number 2.0])])]
+value :: AE.FromJSON a => Parser a
+value = valueWith AE.parseJSON
 
 -- | Take maximum n matching items.
 --
