@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP                 #-}
 module ParserSpec where
 
 import Control.Applicative
@@ -12,10 +13,14 @@ import qualified Data.Text as T
 import Control.Monad (forM_)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Vector as Vec
-import qualified Data.HashMap.Strict as HMap
 import System.Directory (getDirectoryContents)
 import Data.Int
 import Data.Word
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap           as AEK
+#else
+import qualified Data.HashMap.Strict as HMap
+#endif
 
 import Data.JsonStream.Parser
 
@@ -124,13 +129,19 @@ specObjComb = describe "Object accesors" $ do
         msg = parseLazyByteString parser (BL.fromChunks test) :: [BS.ByteString]
     msg `shouldBe` ["abcd\\n\\rxyz"]
 
+
+
 specEdge :: Spec
 specEdge = describe "Edge cases" $ do
   it "Correct incremental parsing 1" $ do
     let msg1 = "[ {\"test1\"  :[1,true,false,null,-3.591e+1,[12,13]], \"test2\":\"123\\r\\n\\\"\\u0041\"}]"
         pmsg = BL.fromChunks $ map BS.singleton msg1
         res = parseLazyByteString value pmsg :: [AE.Value]
+#if MIN_VERSION_aeson(2,0,0)
+    res `shouldBe` [Array (Vec.fromList [Object $ AEK.fromList [("test2",String "123\r\n\"A"),("test1",Array (Vec.fromList [Number 1.0,Bool True,Bool False,Null,Number (-35.91),Array (Vec.fromList [Number 12.0,Number 13.0])]))]])]
+#else
     res `shouldBe` [Array (Vec.fromList [Object $ HMap.fromList [("test2",String "123\r\n\"A"),("test1",Array (Vec.fromList [Number 1.0,Bool True,Bool False,Null,Number (-35.91),Array (Vec.fromList [Number 12.0,Number 13.0])]))]])]
+#endif
 
   it "Correct incremental parsing 2" $ do
     let msg1 = "{\"test1\"  :[1,true,false,null,-3.591e+1,[12,13]], \"test2\":\"test2string\"}"
