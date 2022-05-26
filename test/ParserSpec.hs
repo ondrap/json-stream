@@ -74,6 +74,14 @@ specObjComb = describe "Object accesors" $ do
         msg = parse (arrayOf $ (,) <$> objectWithKey "name" value <*> objectWithKey "age" value) test :: [(T.Text,Int)]
     msg `shouldBe` [("John",20),("Frank",30)]
 
+  it "objectKeyValues works" $ do
+    let test = "[{'name': 'John', 'age': 20}, {'age': 30, 'name': 'Frank' } ]"
+        item "name" = Left <$> string
+        item "age" = Right <$> integer
+        item _ = empty
+        msg = parse (arrayOf $ objectKeyValues item) test :: [Either T.Text Int]
+    msg `shouldBe` [Left "John",Right 20,Right 30,Left "Frank"]
+
   it "yield test 1" $ do
     let test = "[{'key1': [1,2,3], 'key2': [5,6,7]}]"
         msg1 = parse (arrayOf $ objectItems value) test :: [(T.Text, [Int])]
