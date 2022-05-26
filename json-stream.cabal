@@ -49,6 +49,7 @@ library
                        , vector
                        , unordered-containers
                        , scientific
+                       , primitive
   if flag(conduit)
     exposed-modules:     Data.JsonStream.Conduit
     build-depends:       conduit
@@ -111,6 +112,8 @@ test-suite spec
                        , directory
                        , QuickCheck
                        , quickcheck-unicode
+                       , primitive
+
 
 -- executable spdtest
 --   main-is: spdtest.hs
