@@ -26,6 +26,7 @@ library
                        , vector
                        , unordered-containers
                        , scientific
+                       , primitive
 
   ghc-options: -O2 -Wall
   cc-options: -O2 -Wall
