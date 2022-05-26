@@ -4,6 +4,7 @@
 {-# LANGUAGE UnliftedFFITypes         #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiWayIf   #-}
+{-# LANGUAGE PatternGuards   #-}
 
 module Data.JsonStream.Unescape (
   unescapeText
@@ -22,12 +23,11 @@ import           Foreign.Storable           (peek)
 #if MIN_VERSION_text(2,0,0)
 
 import qualified Data.Primitive           as P
-import qualified Data.Text.Array          as T
+import qualified Data.Text.Array          as TA
 import qualified Data.Text.Internal       as T
 import           Data.Bits                (shiftL, shiftR, (.&.), (.|.))
 import           Control.Exception        (try, throwIO)
 import Foreign.ForeignPtr (ForeignPtr)
-import GHC.ForeignPtr (plusForeignPtr)
 
 #else
 
@@ -429,7 +429,7 @@ unescapeTextIO bs = withBS bs $ \fptr len ->
             P.shrinkMutablePrimArray arr out
             frozenArr <- P.unsafeFreezePrimArray arr
             return $ case frozenArr of
-              P.PrimArray ba -> T.Text (T.ByteArray ba) 0 out
+              P.PrimArray ba -> T.Text (TA.ByteArray ba) 0 out
 
           | otherwise = do
             w8 <- peek inp
