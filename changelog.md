@@ -1,3 +1,10 @@
+# 0.4.4.0
+
+- added text 2.0 compatibility
+- added conduit interface behind a flag (Dylan Simon)
+- added manyReverse (Dylan Simon)
+- added valueWith (Dylan Simon)
+
 # 0.4.3.0
 
 - Aeson 2.0 compatibility
