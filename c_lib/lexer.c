@@ -186,7 +186,9 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
     char ch;
     int hasspecialchar = 0;
 
-    for (ch=input[lexer->position]; lexer->position < lexer->length; ch = input[++lexer->position])
+    for (ch=input[lexer->position]; lexer->position < lexer->length; ch = input[++lexer->position]) {
+      if (ch < 32 || ch > 126)
+        hasspecialchar = 1;
       if (lexer->state_data_2)
         lexer->state_data_2 = 0;
       else if (ch == '\\') {
@@ -194,6 +196,7 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
         hasspecialchar = 1;
       } else if (ch == '"')
         break;
+    }
 
     struct lexer_result *res = &result[lexer->result_num];
     res->startpos = startposition;
@@ -203,9 +206,9 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
       if (lexer->state_data)
         res->adddata = 1; // Indicate that we are final portion of the string
       else if (hasspecialchar)
-        res->adddata = 0; // Indicate that the string contains escaped characters
+        res->adddata = 0; // Indicate that the string contains escaped/UTF-8 characters
       else
-        res->adddata = -1; // Indicate that the stirng is clean UTF-8 (optimization)
+        res->adddata = -1; // Indicate that the stirng is clean ASCII (optimization)
 
       lexer->result_num++;
       lexer->current_state = STATE_BASE;

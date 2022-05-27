@@ -111,6 +111,7 @@ import           Foreign.C.Types
 
 import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
+import Data.JsonStream.Unescape (unsafeDecodeASCII)
 
 -- | Limit for the size of an object key
 objectKeyStringLimit :: Int
@@ -323,7 +324,9 @@ object' once valparse = Parser $ \tp ->
     nextitem _ _ (ObjectEnd ctx) ntok = Done ctx ntok
     nextitem yielded _ (JValue (AE.String key)) ntok =
       objcontent yielded (callParse (valparse key) ntok)
-    nextitem yielded _ (StringRaw bs) ntok = 
+    nextitem yielded _ (StringRaw bs True) ntok = 
+        objcontent yielded (callParse (valparse (unsafeDecodeASCII bs)) ntok)
+    nextitem yielded _ (StringRaw bs False) ntok = 
       case unescapeText bs of
         Right t -> objcontent yielded (callParse (valparse t) ntok)
         Left e -> Failed (show e)
@@ -394,7 +397,8 @@ aeValue = Parser $ moreData value'
         JValue val -> Yield val (Done "" ntok)
         JInteger val -> Yield (AE.Number $ fromIntegral val) (Done "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
-        StringRaw bs -> case unescapeText bs of
+        StringRaw bs True -> Yield (AE.String (unsafeDecodeASCII bs)) (Done "" ntok)
+        StringRaw bs False -> case unescapeText bs of
               Right t -> Yield (AE.String t) (Done "" ntok)
               Left e -> Failed (show e)
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
@@ -434,7 +438,7 @@ longByteString mbounds = Parser $ moreData (handle id 0)
     handle acc !len tok el ntok =
       case el of
         JValue (AE.String _) -> Failed "INTERNAL ERROR! - got decoded JValue instead of string"
-        StringRaw bs -> Yield bs (Done "" ntok)
+        StringRaw bs _ -> Yield bs (Done "" ntok)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
@@ -462,7 +466,8 @@ longString mbounds = Parser $ moreData (handle id 0)
     handle acc !len tok el ntok =
       case el of
         JValue (AE.String str) -> Yield str (Done "" ntok)
-        StringRaw bs -> 
+        StringRaw bs True -> Yield (unsafeDecodeASCII bs) (Done "" ntok)
+        StringRaw bs False -> 
           case unescapeText bs of
             Right t -> Yield t (Done "" ntok)
             Left e -> Failed (show e)
@@ -607,7 +612,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
 
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok
-    handleTok 0 _ (StringRaw _) ntok = Done "" ntok
+    handleTok 0 _ (StringRaw _ _) ntok = Done "" ntok
     handleTok 0 _ (JInteger _) ntok = Done "" ntok
     handleTok 0 _ (ArrayEnd _) _ = Failed "ArrayEnd in ignoreval on 0 level"
     handleTok 0 _ (ObjectEnd _) _ = Failed "ObjectEnd in ignoreval on 0 level"
@@ -618,7 +623,7 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         JValue _ -> moreData (handleTok level) ntok
         JInteger _ -> moreData (handleTok level) ntok
         StringContent _ -> moreData (handleLongString level) ntok
-        StringRaw _ -> moreData (handleTok level) ntok
+        StringRaw _ _ -> moreData (handleTok level) ntok
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
         ArrayBegin -> moreData (handleTok (level + 1)) ntok

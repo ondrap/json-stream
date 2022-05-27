@@ -7,7 +7,8 @@
 {-# LANGUAGE PatternGuards   #-}
 
 module Data.JsonStream.Unescape (
-  unescapeText
+    unescapeText
+  , unsafeDecodeASCII
 ) where
 
 import           Data.ByteString            as B
@@ -19,6 +20,7 @@ import           Data.Word                  (Word8, Word32)
 import           Foreign.ForeignPtr         (withForeignPtr)
 import           Foreign.Ptr                (Ptr, plusPtr)
 import           Foreign.Storable           (peek)
+import qualified Data.Text as T
 
 #if MIN_VERSION_text(2,0,0)
 
@@ -28,6 +30,7 @@ import qualified Data.Text.Internal       as T
 import           Data.Bits                (shiftL, shiftR, (.&.), (.|.))
 import           Control.Exception        (try, throwIO)
 import Foreign.ForeignPtr (ForeignPtr)
+import qualified Data.ByteString.Short.Internal as SBS
 
 #else
 
@@ -38,8 +41,20 @@ import           Foreign.Marshal.Utils      (with)
 import qualified Data.Text.Array            as A
 import           GHC.Base                   (MutableByteArray#)
 import           Foreign.C.Types            (CInt (..), CSize (..))
+import qualified Data.Text.Encoding as TE
 
 #endif
+
+unsafeDecodeASCII :: ByteString -> T.Text
+
+#if MIN_VERSION_text(2,0,0)
+unsafeDecodeASCII bs = withBS bs $ \_fp len -> if len == 0 then T.empty else
+  let !(SBS.SBS arr) = SBS.toShort bs in T.Text (TA.ByteArray arr) 0 len
+
+#else
+unsafeDecodeASCII = TE.decodeLatin1
+#endif
+
 
 #if !MIN_VERSION_text(2,0,0)
 

@@ -218,7 +218,7 @@ parseResults TempData{tmpNumbers=tmpNumbers, tmpBuffer=bs} (err, hdr, rescount, 
                        Nothing -> TokFailed
         | resType == resString ->
           if | resAddData == -1 || resAddData == 0 -> -- One-part string without escaped characters; with escaped
-                PartialResult (StringRaw textSection) next
+                PartialResult (StringRaw textSection (resAddData == -1)) next
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
                             (PartialResult StringEnd next)
         | resType == resStringPartial ->

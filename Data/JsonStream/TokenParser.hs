@@ -15,7 +15,7 @@ data Element =
   | ObjectBegin
   | ObjectEnd !BS.ByteString
   | StringContent !BS.ByteString
-  | StringRaw !BS.ByteString -- Allow raw strings to go into parser as bytestring
+  | StringRaw !BS.ByteString !Bool -- Allow raw strings to go into parser as bytestring/ isAscii
   | StringEnd
   | JValue !AE.Value
   | JInteger !CLong
