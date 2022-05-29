@@ -67,6 +67,7 @@ module Data.JsonStream.Parser (
   , objectWithKey
   , objectItems
   , objectValues
+  , objectKeyValues
   , arrayOf
   , arrayWithIndexOf
   , indexedArrayOf
@@ -372,6 +373,12 @@ objectItems valparse = object' False $ \(!key) -> (key,) <$> valparse
 -- are matched. Keys are ignored.
 objectValues :: Parser a -> Parser a
 objectValues valparse = object' False (const valparse)
+
+-- | Match all key-value pairs of an object, and parse the value based on the key.
+-- If the source object defines same key multiple times, all values
+-- are matched.
+objectKeyValues :: (T.Text -> Parser a) -> Parser a
+objectKeyValues = object' False
 
 -- | Match only specific key of an object.
 -- This function will return only the first matched value in an object even
