@@ -7,7 +7,7 @@
 - use [aeson](https://hackage.haskell.org/package/aeson) if you can; compile aeson with `cffi` flag if you need better performance
 - use `json-stream` if you
   - need streaming
-  - need every bit of performance (do profile; aeson is quite fast these days)
+  - need every bit of performance (do profile; the best course could be using the aeson `value` parser with json-stream)
   - do not care that parsing may not fail on malformed JSON data
   - do not need advanced error reporting; json-stream tends to skip data that
     doesn't fit parsing rules (this might be implemented better in the future)
@@ -87,7 +87,7 @@ in the following scenarios:
   (the `cffi` flag of aeson enables fast text decoding borrowed from json-stream)
 - parsing only subset of big JSON structures
 
-Json-stream is in streaming mode is also much friendlier to the GC.
+Json-stream in streaming mode is also much friendlier to the GC.
 
 Using json-stream parser instead of aeson `value` evades the need to build the structure
 using aeson `Value` and then converting it to the user-requested structure. Instead

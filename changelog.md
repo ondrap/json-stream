@@ -1,3 +1,9 @@
+# 0.4.4.1
+
+- added objectKeyValues (Dylan Simon)
+- optimization for reading ASCII strings
+
+
 # 0.4.4.0
 
 - added text 2.0 compatibility
