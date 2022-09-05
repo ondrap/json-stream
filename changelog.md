@@ -1,3 +1,7 @@
+# 0.4.4.2
+
+- aeson-2.1
+
 # 0.4.4.1
 
 - added objectKeyValues (Dylan Simon)
