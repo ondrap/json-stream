@@ -2,9 +2,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE UnliftedFFITypes         #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE MultiWayIf   #-}
-{-# LANGUAGE PatternGuards   #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Data.JsonStream.Unescape (
     unescapeText
