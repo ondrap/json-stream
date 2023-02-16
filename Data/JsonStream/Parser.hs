@@ -900,7 +900,7 @@ fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
 fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
   where
     mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
-      Just (vals :: [a]) -> vals
+      Just (vals :: [a]) -> reverse vals
       Nothing -> []
     parseObj = unsafeCoerce <$> parser
 
@@ -908,7 +908,7 @@ fastObjectWithKeyMaybe :: forall a. T.Text -> Parser a -> Object (Maybe a)
 fastObjectWithKeyMaybe tname parser = Object (Map.singleton tname parseObj) mkObj
   where
     mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
-      Just (vals :: [a]) -> Just <$> vals
+      Just (vals :: [a]) -> Just <$> reverse vals
       Nothing -> [Nothing]
     parseObj = unsafeCoerce <$> parser
 
@@ -917,6 +917,9 @@ fastObjectWithKeyMaybe tname parser = Object (Map.singleton tname parseObj) mkOb
 -- The whole object is parsed in a single run. Use the '.:' combinator to
 -- access the fields; you may not access the same field more than once. If you
 -- try to access the same field, an 'error' is called.
+--
+-- The operators '.:', '.:?', '<|>' and '<>' are supported and will produce
+-- the same results as if used directly with parallel parsing.
 objectOf :: forall f. Object f -> Parser f
 objectOf (Object pmap odata) =
   unFoldI $ odata <$> foldResults (object' False parseKey)
