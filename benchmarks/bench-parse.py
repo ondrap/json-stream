@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os, re, subprocess, sys
 
@@ -10,10 +10,10 @@ else:
     parser_exe = 'aeson-benchmark-aeson-parse'
 
 def run(count, filename):
-    print '    %s :: %s times' % (filename, count)
+    print('    %s :: %s times' % (filename, count))
     p = subprocess.Popen(['cabal', 'exec', parser_exe, '65536', str(count), filename],
                          stdout=subprocess.PIPE)
-    output = p.stdout.read()
+    output = p.stdout.read().decode('utf8')
     p.wait()
     m = result_re.search(output)
     if not m:
@@ -33,7 +33,7 @@ def run(count, filename):
     return parses_per_second, mb_per_second, st.st_size, elapsed
 
 def runtimes(count, filename, times=1):
-    for i in xrange(times):
+    for i in range(times):
         yield run(count, filename)
 
 info = '''

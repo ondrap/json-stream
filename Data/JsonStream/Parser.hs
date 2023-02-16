@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternGuards       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -72,11 +73,17 @@ module Data.JsonStream.Parser (
   , arrayWithIndexOf
   , indexedArrayOf
   , nullable
+    -- * Fast structure parser
+  , fastObject
+  , (..:)
+  , FastObject
     -- * Parsing modifiers
   , filterI
   , takeI
   , mapWithFailure
   , manyReverse
+  , foldMapI
+  , catMaybeI
     -- * SAX-like parsers
   , arrayFound
   , objectFound
@@ -113,6 +120,8 @@ import           Foreign.C.Types
 import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
 import Data.JsonStream.Unescape (unsafeDecodeASCII)
+import qualified Data.Map.Strict as Map
+import Data.Dynamic (Dynamic, Typeable, fromDynamic, toDyn)
 
 -- | Limit for the size of an object key
 objectKeyStringLimit :: Int
@@ -320,7 +329,7 @@ object' once valparse = Parser $ \tp ->
     (PartialResult ObjectBegin ntp) -> moreData (nextitem False) ntp
     (PartialResult _ _) -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok) -> MoreData (object' once valparse, ntok)
-    TokFailed -> Failed "Array - token failed"
+    TokFailed -> Failed "Object - token failed"
   where
     nextitem _ _ (ObjectEnd ctx) ntok = Done ctx ntok
     nextitem yielded _ (JValue (AE.String key)) ntok =
@@ -354,7 +363,7 @@ object' once valparse = Parser $ \tp ->
           | otherwise -> moreData (getLongKey (str:acc) (len + BS.length str)) ntok
         _ -> Failed "Object longstr - lexer failed."
 
--- | Helper function to deduplicate TokMoreData/FokFailed logic
+-- | Helper function to deduplicate TokMoreData/TokFailed logic
 moreData :: (TokenResult -> Element -> TokenResult -> ParseResult v) -> TokenResult -> ParseResult v
 moreData parser tok =
   case tok of
@@ -651,6 +660,25 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
       | cond v = Yield v (loop np)
       | otherwise = loop np
 
+-- | Strict foldMap over values in stream
+foldMapI :: Monoid m => (a -> m) -> Parser a -> Parser m
+foldMapI mfmap f = Parser $ \ntok -> loop mempty (callParse f ntok)
+  where
+    loop !acc (Done ctx ntp) = Yield acc (Done ctx ntp)
+    loop !acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
+    loop !acc (Yield v np) = loop (acc <> mfmap v) np
+    loop _ (Failed err) = Failed err
+
+-- | Filter Nothing values out of a stream
+catMaybeI :: Parser (Maybe a) -> Parser a
+catMaybeI valparse = Parser $ \ntok -> loop (callParse valparse ntok)
+  where
+    loop (Done ctx ntp) = Done ctx ntp
+    loop (Failed err) = Failed err
+    loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
+    loop (Yield (Just v) np) = Yield v (loop np)
+    loop (Yield Nothing np) = loop np
+
 -- | A back-door for lifting of possibly failing actions.
 -- If an action fails with Left value, convert it into failure
 -- of parsing
@@ -801,6 +829,37 @@ eitherDecodeStrict bs =
     checkExit (ParseDone rest) v
       | BS.all isSpace rest = Right v
     checkExit _ _ = Left "Data folowed by non-whitespace characters."
+
+--- High performance object parsing
+
+-- | 
+data FastObject f = FastObject (Map.Map T.Text (Parser Dynamic)) (Map.Map T.Text Dynamic -> Maybe f)
+  deriving (Functor)
+
+instance Applicative FastObject where
+  pure f = FastObject mempty (const (pure f))
+  (FastObject amap adata) <*> (FastObject bmap bdata) = FastObject (amap <> bmap) dfunc
+    where
+      dfunc dmap = do
+        b <- bdata dmap
+        a <- adata dmap
+        return (a b)
+
+-- | 
+(..:) :: forall a. Typeable a => T.Text -> Parser a -> FastObject a
+(..:) tname parser = FastObject (Map.singleton tname parseObj) mkObj
+  where
+    mkObj dmap = Map.lookup tname dmap >>= fromDynamic
+    parseObj = toDyn <$> parser
+
+fastObject :: FastObject f -> Parser f
+fastObject (FastObject pmap odata) =
+  catMaybeI $ odata <$> foldMapI id (object' False parseKey)
+  where
+    parseKey :: T.Text -> Parser (Map.Map T.Text Dynamic)
+    parseKey key = case Map.lookup key pmap of
+      Nothing -> ignoreVal
+      Just p -> Map.singleton key <$> p
 
 -- $use
 --

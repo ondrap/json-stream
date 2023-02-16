@@ -48,6 +48,7 @@ library
                        , aeson >= 0.7 && < 2.2
                        , vector
                        , unordered-containers
+                       , containers
                        , scientific
                        , primitive
   if flag(conduit)
