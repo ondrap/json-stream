@@ -887,6 +887,14 @@ instance Alternative Object where
           [] -> bdata dmap
           lst -> lst
 
+instance Semigroup (Object a) where
+  (Object amap adata) <> (Object bmap bdata) =
+      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
+      in dmap `seq` Object dmap dfunc
+    where
+      -- Return second one if first one generates nothing
+      dfunc dmap = adata dmap <> bdata dmap
+
 -- | Similar to 'objectWithKey', generates a field-accessor in JSON object
 fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
 fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
