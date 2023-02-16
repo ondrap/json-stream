@@ -5,6 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -74,9 +76,8 @@ module Data.JsonStream.Parser (
   , indexedArrayOf
   , nullable
     -- * Fast structure parser
-  , fastObject
-  , (..:)
-  , FastObject
+  , objectOf
+  , Object
     -- * Parsing modifiers
   , filterI
   , takeI
@@ -267,7 +268,7 @@ array' valparse = Parser $ \tp ->
     (PartialResult ArrayBegin ntp) -> moreData (nextitem 0) ntp
     (PartialResult _ _) -> callParse ignoreVal tp -- Run ignoreval parser on the same output we got
     (TokMoreData ntok) -> MoreData (array' valparse, ntok)
-    (TokFailed) -> Failed "Array - token failed"
+    TokFailed -> Failed "Array - token failed"
   where
     nextitem !_ _ (ArrayEnd ctx) ntok = Done ctx ntok
     nextitem !i tok _ _ = arrcontent i (callParse (valparse i) tok)
@@ -697,34 +698,52 @@ mapWithFailure mapping =
 
 --- Convenience operators
 
--- | Synonym for 'objectWithKey'. Matches key in an object. The '.:' operators can be chained.
---
--- >>> let json = "{\"key1\": {\"nested-key\": 3}}"
--- >>> parseByteString ("key1" .: "nested-key" .: integer) json :: [Int]
--- [3]
-(.:) :: T.Text -> Parser a -> Parser a
-(.:) = objectWithKey
+class OnObject o a where
+  -- | Synonym for 'objectWithKey'. The '.:' operators can be chained.
+  --
+  -- >>> let json = "{\"key1\": {\"nested-key\": 3}}"
+  -- >>> parseByteString ("key1" .: "nested-key" .: integer) json :: [Int]
+  -- > [3]
+  --
+  -- It works both as a standalone parser and as a part of 'objectOf' parser
+  --
+  -- >>> let test = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}]"
+  -- >>> let person = objectOf $ (,) <$> "name" .: string <*> "value" .: integer .| (-1)
+  -- >>> let people = arrayOf person
+  -- >>> parseByteString people test :: [(T.Text, Int)]
+  -- [("test1",1),("test2",-1),("test3",-1)]
+
+  (.:) :: T.Text -> Parser a -> o a
+  -- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
+  --
+  -- > key .:? val = optional (key .: val)
+  --
+  -- It could be similarly used in the 'objectOf' parser
+  (.:?) :: T.Text -> Parser a -> o (Maybe a)
+
+  -- | Return default value if the parsers on the left hand didn't produce a result.
+  --
+  -- > p .| defval = p <|> pure defval
+  --
+  -- The operator works on complete left side, the following statements are equal:
+  --
+  -- > Record <$>  "key1" .: "nested-key" .: value .| defaultValue
+  -- > Record <$> (("key1" .: "nested-key" .: value) .| defaultValue)
+  (.|) :: o a -> a -> o a
+
 infixr 7 .:
-
--- | Returns 'Nothing' if value is null or does not exist or match. Otherwise returns 'Just' value.
---
--- > key .:? val = optional (key .: val)
-(.:?) :: T.Text -> Parser a -> Parser (Maybe a)
-key .:? val = optional (key .: val)
 infixr 7 .:?
-
--- | Return default value if the parsers on the left hand didn't produce a result.
---
--- > p .| defval = p <|> pure defval
---
--- The operator works on complete left side, the following statements are equal:
---
--- > Record <$>  "key1" .: "nested-key" .: value .| defaultValue
--- > Record <$> (("key1" .: "nested-key" .: value) .| defaultValue)
-(.|) :: Parser a -> a -> Parser a
-p .| defval = p <|> pure defval
 infixl 6 .|
 
+instance OnObject Parser a where
+  (.:) = objectWithKey
+  key .:? val = optional (key .: val)
+  p .| defval = p <|> pure defval
+
+instance Typeable a => OnObject Object a where
+  (.:) = fastObjectWithKey
+  (.:?) = fastObjectWithKeyMaybe
+  (Object pmap out) .| defval = Object pmap ((<|> Just defval) <$> out)
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
 --
@@ -832,28 +851,44 @@ eitherDecodeStrict bs =
 
 --- High performance object parsing
 
--- | 
-data FastObject f = FastObject (Map.Map T.Text (Parser Dynamic)) (Map.Map T.Text Dynamic -> Maybe f)
+-- | Representation for applicative JSON one-pass object parsing
+data Object f = Object 
+  (Map.Map T.Text (Parser Dynamic)) -- ^ Field parsers
+  (Map.Map T.Text Dynamic -> Maybe f) -- ^ How to generate a result from already parsed fields
   deriving (Functor)
 
-instance Applicative FastObject where
-  pure f = FastObject mempty (const (pure f))
-  (FastObject amap adata) <*> (FastObject bmap bdata) = FastObject (amap <> bmap) dfunc
+instance Applicative Object where
+  pure f = Object mempty (const (pure f))
+  (Object amap adata) <*> (Object bmap bdata) =
+      -- Fail on duplicate keys
+      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
+      in dmap `seq` Object dmap dfunc
     where
-      dfunc dmap = do
-        b <- bdata dmap
-        a <- adata dmap
-        return (a b)
+      dfunc dmap = ($) <$> adata dmap <*> bdata dmap
 
--- | 
-(..:) :: forall a. Typeable a => T.Text -> Parser a -> FastObject a
-(..:) tname parser = FastObject (Map.singleton tname parseObj) mkObj
+-- | Similar to 'objectWithKey', generates a 
+fastObjectWithKey :: forall a. Typeable a => T.Text -> Parser a -> Object a
+fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
   where
     mkObj dmap = Map.lookup tname dmap >>= fromDynamic
     parseObj = toDyn <$> parser
 
-fastObject :: FastObject f -> Parser f
-fastObject (FastObject pmap odata) =
+fastObjectWithKeyMaybe :: forall a. Typeable a => T.Text -> Parser a -> Object (Maybe a)
+fastObjectWithKeyMaybe tname parser = Object (Map.singleton tname parseObj) mkObj
+  where
+    mkObj dmap =
+      let res = Map.lookup tname dmap >>= fromDynamic
+      in res <|> Just Nothing
+    parseObj = toDyn <$> parser
+
+-- | Parser for faster object parsing
+--
+-- The whole object is parsed in a single run. Use the '.:' combinator to
+-- access the fields; the field parser types must be 'Typeable' and you may
+-- not access the same field more than once. If you
+-- try to access the same field, an 'error' is called.
+objectOf :: Object f -> Parser f
+objectOf (Object pmap odata) =
   catMaybeI $ odata <$> foldMapI id (object' False parseKey)
   where
     parseKey :: T.Text -> Parser (Map.Map T.Text Dynamic)
@@ -897,7 +932,7 @@ fastObject (FastObject pmap odata) =
 --
 -- The 'value' parser works by creating an aeson AST and passing it to the
 -- 'parseJSON' method. The AST can consume a lot of memory before it is rejected
--- in 'parseJSON'. To achieve constant space the parsers 'safeString', 'number', 'integer',
+-- in 'parseJSON'. To achieve constant space the parsers 'safeString', 'objectOf', 'number', 'integer',
 -- 'real' and 'bool'
 -- must be used; these parsers reject and do not parse data if it does not match the
 -- type.
@@ -914,6 +949,9 @@ fastObject (FastObject pmap odata) =
 -- number of element produced by child parsers is limited by a constant. This can be achieved by using
 -- '.!' and '.:' functions combined with constant space
 -- parsers or limiting the number of returned elements with 'takeI'.
+--
+-- Running many parallel parsers (e.g. when parsing objects with a lot of fields) will slow
+-- things done. Use the 'objectOf'.
 --
 -- If the source object contains an object with multiple keys with a same name,
 -- json-stream matches the key multiple times. The only exception
@@ -934,19 +972,32 @@ fastObject (FastObject pmap odata) =
 -- >>> let people = arrayOf person
 -- >>> parseByteString people test :: [(T.Text, Int)]
 -- [("test1",1),("test2",-1),("test3",-1)]
-
+--
+-- The above code would run 3 parsers in parallel to get the appropriate results. 
+-- You can use the 'objectOf' parser to get a similar result in a more performant way.
+--
+-- >>> let test = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}]"
+-- >>> let person = objectOf $ (,) <$> "name" .: string <*> "value" .: integer .| (-1)
+-- >>> let people = arrayOf person
+-- >>> parseByteString people test :: [(T.Text, Int)]
+-- [("test1",1),("test2",-1),("test3",-1)]
+--
 -- $performance
 -- The parser tries to do the least amount of work to get the job done, skipping over items that
 -- are not required. General guidelines to get best performance:
 --
--- Do not use the 'value' parser for the whole object if the object is big. Do not use json-stream
--- applicative parsing for creating objects if they have lots of records, unless you are skipping
--- large part of the structure. Every '<*>' causes parallel parsing, too many parallel parsers
--- kill performance.
+-- Do not use the 'value' parser for the whole object if the object is big.
+-- Consider using the 'objectOf' parser to parse objects instead of direct applicative parsing
+-- for creating objects if they have lots of records. Every '<*>' outside of direct 'objectOf' parser
+-- causes parallel parsing. Too many parallel parsers kill performance.
+--
+-- > arrayOf $ objectOf $ MyStructure <$> "field1" .: string <*> "field2" .: integer <*> .... <*> "field20" .: string
+--
+-- will be the fastest and use the least memory. 
 --
 -- > arrayOf value :: Parser MyStructure -- MyStructure with FromJSON instance
 --
--- will probably behave better than
+-- will probably still behave better than
 --
 -- > arrayOf $ MyStructure <$> "field1" .: string <*> "field2" .: integer <*> .... <*> "field20" .: string
 --
