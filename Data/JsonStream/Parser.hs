@@ -91,15 +91,7 @@ module Data.JsonStream.Parser (
   , objectFound
 ) where
 
-#if !MIN_VERSION_bytestring(0,10,6)
-import           Data.Monoid                 (Monoid, mappend, mempty)
-#endif
-
-#if MIN_VERSION_base(4,10,0)
-import           Data.Semigroup                 (Semigroup(..))
-#endif
-
-import           Control.Applicative
+import Control.Applicative ( Alternative(..), optional )
 import qualified Data.Aeson                  as AE
 import qualified Data.Aeson.Types            as AE
 import qualified Data.ByteString.Char8       as BS
@@ -117,10 +109,10 @@ import           Data.Scientific             (Scientific, isInteger,
                                               toBoundedInteger, toRealFloat)
 import qualified Data.Text                   as T
 import qualified Data.Vector                 as Vec
-import           Foreign.C.Types
+import Foreign.C.Types ( CLong )
 
-import           Data.JsonStream.CLexer
-import           Data.JsonStream.TokenParser
+import Data.JsonStream.CLexer ( unescapeText, tokenParser )
+import Data.JsonStream.TokenParser ( TokenResult(..), Element(..) )
 import Data.JsonStream.Unescape (unsafeDecodeASCII)
 import qualified Data.Map.Strict as Map
 import Unsafe.Coerce (unsafeCoerce)
@@ -194,17 +186,11 @@ instance Applicative Parser where
 -- >>> let parser = arrayOf $ "key1" .: (arrayOf value) <> "key2" .: (arrayOf value)
 -- >>> parseByteString parser test :: [Int]
 -- [1,2,5,6]
-#if MIN_VERSION_base(4,10,0)
 instance Monoid (Parser a) where
   mempty = ignoreVal
   mappend = (<>)
 instance Semigroup (Parser a) where
   (<>) m1 m2 =
-#else
-instance Monoid (Parser a) where
-  mempty = ignoreVal
-  mappend m1 m2 =
-#endif
     Parser $ \tok -> process (callParse m1 tok) (callParse m2 tok)
     where
       process (Yield v np1) p2 = Yield v (process np1 p2)
@@ -562,7 +548,7 @@ bool = jvalue cvt (const Nothing)
 jNull :: Parser ()
 jNull = jvalue cvt (const Nothing)
   where
-    cvt (AE.Null) = Just ()
+    cvt AE.Null = Just ()
     cvt _ = Nothing
 
 -- | Parses a field with a possible null value.
