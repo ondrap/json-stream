@@ -127,21 +127,28 @@ parseByteString :: Parser a -> ByteString -> [a]
 >>> let test = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"} ]"
 >>> let parser = arrayOf $ (,) <$> "name" .: value
                                <*> "age" .: value
->>> parseByteString  parser test :: [(Text,Int)]
+>>> parseByteString parser test :: [(Text,Int)]
+[("John",20),("Frank",30)]
+
+-- Use objectOf for parsing objects (it's faster than parallel parsing).
+>>> let test = "[{\"name\": \"John\", \"age\": 20}, {\"age\": 30, \"name\": \"Frank\"} ]"
+>>> let parser = arrayOf $ objectOf $ (,) <$> "name" .: value
+                                          <*> "age" .: value
+>>> parseByteString parser test :: [(Text,Int)]
 [("John",20),("Frank",30)]
 
 -- If you have more results returned from each branch, all are combined.
 >>> let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
 >>> let parser = arrayOf $ (,) <$> "key2" .: (arrayOf value)
                                <*> "key1" .: (arrayOf value)
->>> parse parser test :: [(Int, Int)]
+>>> parseByteString parser test :: [(Int, Int)]
 [(6,2),(6,1),(5,2),(5,1)]
 
 -- Use <> to return both branches
 let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
 >>> let parser = arrayOf $    "key1" .: (arrayOf value)
                            <> "key2" .: (arrayOf value)
->>> parse parser test :: [Int]
+>>> parseByteString parser test :: [Int]
 [1,2,5,6]
 
 -- objectItems function enriches value with object key
@@ -152,12 +159,19 @@ let test = "[{\"key1\": [1,2], \"key2\": [5,6], \"key3\": [8,9]}]"
 [("key1",1),("key1",2),("key1",3),("key2",5),("key2",6),("key2",7)]
 
 -- .:? produces a maybe value; Nothing if match is not found or is null.
--- .!= converts Maybe back with a default
->>> let test = "[{\"name\":\"John\", \"value\": 12}, {\"name\":\"name2\"}]"
->>> let parser = arrayOf $ (,) <$> "name"  .: string
-                               <*> "value" .:? integer .!= 0
->>> parseByteString parser test :: [(String,Int)]
-[("John",12),("name2",0)]
+-- .| produces a default value if the preceding didn't produce anything
+>>> let test = "[{\"name\":\"John\", \"value\": 12}, {\"name\":\"name2\"}, {\"value\":12}]"
+>>> let parser = arrayOf $ (,) <$> "name"  .:? string
+                               <*> "value" .: integer .| 0
+>>> parseByteString parser test :: [(Maybe Text, Int)]
+[(Just "John",12),(Just "name2",0),(Nothing,12)]
+
+-- And it works the same with the objectOf parser
+>>> let test = "[{\"name\":\"John\", \"value\": 12}, {\"name\":\"name2\"}, {\"value\":12}]"
+>>> let parser = arrayOf $ objectOf $ (,) <$> "name"  .:? string
+                                          <*> "value" .: integer .| 0
+>>> parseByteString parser test :: [(Maybe Text, Int)]
+[(Just "John",12),(Just "name2",0),(Nothing,12)]
 
 ```
 

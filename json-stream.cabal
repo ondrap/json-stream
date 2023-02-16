@@ -1,5 +1,5 @@
 name:                json-stream
-version:             0.4.4.2
+version:             0.4.5.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
@@ -11,8 +11,6 @@ description:         Easy to use JSON parser fully supporting incremental parsin
                      of the input data. In addition to performance-critical parts written in C,
                      a lot of performance is gained by being less memory intensive especially
                      when used for stream parsing.
-                     .
-                     * WARNING: 0.4.0.0 has code-breaking semantic changes, see changelog!
 
 homepage:            https://github.com/ondrap/json-stream
 license:             BSD3

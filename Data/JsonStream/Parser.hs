@@ -19,7 +19,7 @@
 -- An incremental applicative-style JSON parser, suitable for high performance
 -- memory efficient stream parsing.
 --
--- The parser is using "Data.Aeson" types and 'FromJSON' instance, it can be
+-- The parser is optionally using "Data.Aeson" types and 'FromJSON' instance, it can be
 -- easily combined with aeson monadic parsing instances when appropriate.
 
 module Data.JsonStream.Parser (
@@ -85,6 +85,7 @@ module Data.JsonStream.Parser (
   , manyReverse
   , foldI
   , foldMapI
+  , unFoldI
   , catMaybeI
     -- * SAX-like parsers
   , arrayFound
@@ -671,6 +672,7 @@ catMaybeI valparse = Parser $ \ntok -> loop (callParse valparse ntok)
     loop (Yield (Just v) np) = Yield v (loop np)
     loop (Yield Nothing np) = loop np
 
+-- | From a list of values generate single values
 unFoldI :: Parser [a] -> Parser a
 unFoldI valparse = Parser $ \ntok -> loop (callParse valparse ntok)
   where
@@ -858,7 +860,7 @@ eitherDecodeStrict bs =
 -- | Representation for applicative JSON one-pass object parsing
 data Object f = Object 
   (Map.Map T.Text (Parser ())) -- ^ Field parsers
-  (Map.Map T.Text [()] -> [f]) -- ^ How to generate a result from already parsed fields
+  (Map.Map T.Text [()] -> [f]) -- ^ How to generate results from already parsed fields
   deriving (Functor)
 
 -- We use unsafeCoerce to convert to () and back; we guarantee that there exists only
@@ -885,7 +887,7 @@ instance Alternative Object where
           [] -> bdata dmap
           lst -> lst
 
--- | Similar to 'objectWithKey', generates a 
+-- | Similar to 'objectWithKey', generates a field-accessor in JSON object
 fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
 fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
   where

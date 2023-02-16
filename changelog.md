@@ -1,3 +1,8 @@
+# 0.4.5.0
+
+- objectOf parser for faster one-pass JSON object parsing
+- set minimum base to 4.11
+
 # 0.4.4.2
 
 - aeson-2.1
