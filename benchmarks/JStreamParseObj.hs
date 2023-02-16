@@ -10,7 +10,7 @@ import Data.JsonStream.Parser
 import Data.Aeson.Types (Value(..))
 import Control.Applicative (many)
 import Data.Word
-import Data.JsonStream.Parser (integer, object, value)
+import Data.JsonStream.Parser (integer, objectOf, value)
 import qualified Data.Text as T
 import Data.Aeson (FromJSON, withObject)
 import qualified Data.Aeson as AE
@@ -56,7 +56,7 @@ main = do
           let obj2 = objectOf $ TestObj <$> "guid" .: string <*> "picture" .: string <*> "age" .: integer <*> "about" .: string <*> "phone" .: string <*> "index" .: integer  :: Parser TestObj
           let obj3 = value :: Parser TestObj
 
-          let parser3 = arrayOf obj3 :: Parser TestObj
+          let parser3 = arrayOf obj2 :: Parser TestObj
 
           result <- parseWith refill parser3 =<< refill
           case result of

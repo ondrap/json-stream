@@ -83,6 +83,7 @@ module Data.JsonStream.Parser (
   , takeI
   , mapWithFailure
   , manyReverse
+  , foldI
   , foldMapI
   , catMaybeI
     -- * SAX-like parsers
@@ -122,7 +123,7 @@ import           Data.JsonStream.CLexer
 import           Data.JsonStream.TokenParser
 import Data.JsonStream.Unescape (unsafeDecodeASCII)
 import qualified Data.Map.Strict as Map
-import Data.Dynamic (Dynamic, Typeable, fromDynamic, toDyn)
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | Limit for the size of an object key
 objectKeyStringLimit :: Int
@@ -661,14 +662,18 @@ filterI cond valparse = Parser $ \ntok -> loop (callParse valparse ntok)
       | cond v = Yield v (loop np)
       | otherwise = loop np
 
--- | Strict foldMap over values in stream
-foldMapI :: Monoid m => (a -> m) -> Parser a -> Parser m
-foldMapI mfmap f = Parser $ \ntok -> loop mempty (callParse f ntok)
+-- | Fold over values in stream
+foldI :: (b -> a -> b) -> b -> Parser a -> Parser b
+foldI mfold start f = Parser $ \ntok -> loop start (callParse f ntok)
   where
     loop !acc (Done ctx ntp) = Yield acc (Done ctx ntp)
     loop !acc (MoreData (Parser np, ntok)) = MoreData (Parser (loop acc . np), ntok)
-    loop !acc (Yield v np) = loop (acc <> mfmap v) np
+    loop !acc (Yield v np) = loop (acc `mfold` v) np
     loop _ (Failed err) = Failed err
+
+-- | Strict foldMap over values in stream
+foldMapI :: Monoid m => (a -> m) -> Parser a -> Parser m
+foldMapI f = foldI (\b a -> b <> f a) mempty
 
 -- | Filter Nothing values out of a stream
 catMaybeI :: Parser (Maybe a) -> Parser a
@@ -679,6 +684,15 @@ catMaybeI valparse = Parser $ \ntok -> loop (callParse valparse ntok)
     loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
     loop (Yield (Just v) np) = Yield v (loop np)
     loop (Yield Nothing np) = loop np
+
+unFoldI :: Parser [a] -> Parser a
+unFoldI valparse = Parser $ \ntok -> loop (callParse valparse ntok)
+  where
+    loop (Done ctx ntp) = Done ctx ntp
+    loop (Failed err) = Failed err
+    loop (MoreData (Parser np, ntok)) = MoreData (Parser (loop . np), ntok)
+    loop (Yield (v:rest) np) = Yield v (loop (Yield rest np))
+    loop (Yield [] np) = loop np
 
 -- | A back-door for lifting of possibly failing actions.
 -- If an action fails with Left value, convert it into failure
@@ -740,10 +754,14 @@ instance OnObject Parser a where
   key .:? val = optional (key .: val)
   p .| defval = p <|> pure defval
 
-instance Typeable a => OnObject Object a where
+instance OnObject Object a where
   (.:) = fastObjectWithKey
   (.:?) = fastObjectWithKeyMaybe
-  (Object pmap out) .| defval = Object pmap ((<|> Just defval) <$> out)
+  (Object pmap out) .| defval = Object pmap altFunc
+    where
+      altFunc dmap = case out dmap of
+        [] -> [defval]
+        res -> res
 
 -- | Synonym for 'arrayWithIndexOf'. Matches n-th item in array.
 --
@@ -853,48 +871,70 @@ eitherDecodeStrict bs =
 
 -- | Representation for applicative JSON one-pass object parsing
 data Object f = Object 
-  (Map.Map T.Text (Parser Dynamic)) -- ^ Field parsers
-  (Map.Map T.Text Dynamic -> Maybe f) -- ^ How to generate a result from already parsed fields
+  (Map.Map T.Text (Parser ())) -- ^ Field parsers
+  (Map.Map T.Text [()] -> [f]) -- ^ How to generate a result from already parsed fields
   deriving (Functor)
+
+-- We use unsafeCoerce to convert to () and back; we guarantee that there exists only
+-- one key to the map and so the original Parser will get the right type of value.
+-- This allows to drop the Typeable constraint, but the code better be OK here.
 
 instance Applicative Object where
   pure f = Object mempty (const (pure f))
   (Object amap adata) <*> (Object bmap bdata) =
-      -- Fail on duplicate keys
       let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
       in dmap `seq` Object dmap dfunc
     where
       dfunc dmap = ($) <$> adata dmap <*> bdata dmap
 
+instance Alternative Object where
+  empty = Object mempty (const [])
+  (Object amap adata) <|> (Object bmap bdata) =
+      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
+      in dmap `seq` Object dmap dfunc
+    where
+      -- Return second one if first one generates nothing
+      dfunc dmap =
+        case adata dmap of
+          [] -> bdata dmap
+          lst -> lst
+
 -- | Similar to 'objectWithKey', generates a 
-fastObjectWithKey :: forall a. Typeable a => T.Text -> Parser a -> Object a
+fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
 fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
   where
-    mkObj dmap = Map.lookup tname dmap >>= fromDynamic
-    parseObj = toDyn <$> parser
+    mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
+      Just (vals :: [a]) -> vals
+      Nothing -> []
+    parseObj = unsafeCoerce <$> parser
 
-fastObjectWithKeyMaybe :: forall a. Typeable a => T.Text -> Parser a -> Object (Maybe a)
+fastObjectWithKeyMaybe :: forall a. T.Text -> Parser a -> Object (Maybe a)
 fastObjectWithKeyMaybe tname parser = Object (Map.singleton tname parseObj) mkObj
   where
-    mkObj dmap =
-      let res = Map.lookup tname dmap >>= fromDynamic
-      in res <|> Just Nothing
-    parseObj = toDyn <$> parser
+    mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
+      Just (vals :: [a]) -> Just <$> vals
+      Nothing -> [Nothing]
+    parseObj = unsafeCoerce <$> parser
 
 -- | Parser for faster object parsing
 --
 -- The whole object is parsed in a single run. Use the '.:' combinator to
--- access the fields; the field parser types must be 'Typeable' and you may
--- not access the same field more than once. If you
+-- access the fields; you may not access the same field more than once. If you
 -- try to access the same field, an 'error' is called.
-objectOf :: Object f -> Parser f
+objectOf :: forall f. Object f -> Parser f
 objectOf (Object pmap odata) =
-  catMaybeI $ odata <$> foldMapI id (object' False parseKey)
+  unFoldI $ odata <$> foldResults (object' False parseKey)
   where
-    parseKey :: T.Text -> Parser (Map.Map T.Text Dynamic)
+    foldResults :: Parser (T.Text, ()) -> Parser (Map.Map T.Text [()])
+    foldResults = foldI (\bmap (k,v) -> Map.alter (addVal v) k bmap) mempty
+      where
+        addVal v Nothing = Just [v]
+        addVal v (Just old) = Just (v:old)
+
+    parseKey :: T.Text -> Parser (T.Text, ())
     parseKey key = case Map.lookup key pmap of
       Nothing -> ignoreVal
-      Just p -> Map.singleton key <$> p
+      Just p -> (key,) <$> p
 
 -- $use
 --

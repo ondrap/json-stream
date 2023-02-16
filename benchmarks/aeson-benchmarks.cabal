@@ -53,13 +53,13 @@ executable aeson-benchmark-aeson-parse
     time,
     aeson (>=0.9)
 
--- executable aeson-benchmark-fastobj
---   main-is: JStreamParseObj.hs
---   ghc-options: -Wall -O2 -rtsopts
---   build-depends:
---     aeson-benchmarks,
---     aeson (>=0.7),
---     base,
---     bytestring,
---     time,
---     text
+executable aeson-benchmark-fastobj
+  main-is: JStreamParseObj.hs
+  ghc-options: -Wall -O2 -rtsopts
+  build-depends:
+    aeson-benchmarks,
+    aeson (>=0.7),
+    base,
+    bytestring,
+    time,
+    text
