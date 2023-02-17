@@ -92,7 +92,7 @@ module Data.JsonStream.Parser (
   , objectFound
 ) where
 
-import Control.Applicative ( Alternative(..), optional )
+import Control.Applicative ( Alternative(..), optional, Applicative (liftA2) )
 import qualified Data.Aeson                  as AE
 import qualified Data.Aeson.Types            as AE
 import qualified Data.ByteString.Char8       as BS
@@ -863,37 +863,30 @@ data Object f = Object
   (Map.Map T.Text [()] -> [f]) -- ^ How to generate results from already parsed fields
   deriving (Functor)
 
--- We use unsafeCoerce to convert to () and back; we guarantee that there exists only
--- one key to the map and so the original Parser will get the right type of value.
--- This allows to drop the Typeable constraint, but the code better be OK here.
+-- | Helper function for some parser combining operators
+joinObjectFieldWith ::([a] -> [b] -> [c]) -> Object a -> Object b -> Object c
+joinObjectFieldWith joinFunc (Object amap adata) (Object bmap bdata) =
+  -- We MUST disallow duplicate field access as we do unsafeCoerce and that could lead to mixing types
+  let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
+  in dmap `seq` Object dmap (\inp -> joinFunc (adata inp) (bdata inp))
 
 instance Applicative Object where
   pure f = Object mempty (const (pure f))
-  (Object amap adata) <*> (Object bmap bdata) =
-      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
-      in dmap `seq` Object dmap dfunc
-    where
-      dfunc dmap = ($) <$> adata dmap <*> bdata dmap
+  (<*>) = joinObjectFieldWith (liftA2 ($))
 
 instance Alternative Object where
   empty = Object mempty (const [])
-  (Object amap adata) <|> (Object bmap bdata) =
-      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
-      in dmap `seq` Object dmap dfunc
+  (<|>) = joinObjectFieldWith dfunc
     where
-      -- Return second one if first one generates nothing
-      dfunc dmap =
-        case adata dmap of
-          [] -> bdata dmap
-          lst -> lst
+      dfunc [] bdata = bdata
+      dfunc adata _ = adata
 
 instance Semigroup (Object a) where
-  (Object amap adata) <> (Object bmap bdata) =
-      let dmap = Map.unionWithKey (\k _ _ -> error ("JStream Object - duplicate field access: " <> T.unpack k)) amap bmap
-      in dmap `seq` Object dmap dfunc
-    where
-      -- Return second one if first one generates nothing
-      dfunc dmap = adata dmap <> bdata dmap
+  (<>) = joinObjectFieldWith (<>)
+
+-- We use unsafeCoerce to convert to () and back; we guarantee that there exists only
+-- one key to the map and so the original Parser will get the right type of value.
+-- This allows to drop the Typeable constraint, but the code better be OK here.
 
 -- | Similar to 'objectWithKey', generates a field-accessor in JSON object
 fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
