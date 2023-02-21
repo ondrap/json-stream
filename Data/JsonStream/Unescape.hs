@@ -2,6 +2,9 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE UnliftedFFITypes         #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE MultiWayIf         #-}
+
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Data.JsonStream.Unescape (
