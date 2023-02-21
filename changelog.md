@@ -1,3 +1,7 @@
+# 0.4.5.1
+
+- fixed testing suite
+
 # 0.4.5.0
 
 - objectOf parser for faster one-pass JSON object parsing
