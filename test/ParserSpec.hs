@@ -119,6 +119,20 @@ specObjComb = describe "Object accesors" $ do
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [1]
 
+  it "objectOf <|> returns first items even if second is in previous chunk" $ do
+    let test = ["{\"error\":1, ", "\"values\":[2,3,4]}"]
+        parser =  objectOf $ "values" .: arrayOf integer
+                            <|> "error" .: integer
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [2,3,4]
+  it "objectOf <|> returns second item if first does not match" $ do
+    let test = ["{\"error\":1, ", "\"values\":[true,null,false]}"]
+        parser =  objectOf $ "values" .: arrayOf integer
+                            <|> ("error" .: integer)
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [1]
+
+
   it "arrayFound generates events" $ do
     let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
         parser = arrayOf (arrayFound 10 20 (1 .! integer))
@@ -128,6 +142,12 @@ specObjComb = describe "Object accesors" $ do
   it "objectFound generates events" $ do
     let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
         parser = arrayOf (objectFound 10 20 ("key" .: integer))
+        msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
+    msg `shouldBe` [10,1,20]
+
+  it "objectOf objectFound generates events" $ do
+    let test = ["[[1,2,3],true,[],false,{\"key\":1}]"]
+        parser = arrayOf (objectFound 10 20 (objectOf $ "key" .: integer))
         msg = parseLazyByteString parser (BL.fromChunks test) :: [Int]
     msg `shouldBe` [10,1,20]
 
@@ -282,6 +302,13 @@ errTests = describe "Tests of previous errors" $ do
         res = parse parser test1 :: [(T.Text, Int)]
     res `shouldBe` [("test1",1),("test2",-1),("test3",-1),("test4",-1)]
 
+  it "objectOf $ binds correctly convenience operators" $ do
+    let test1 = "[{\"name\": \"test1\", \"value\": 1}, {\"name\": \"test2\", \"value\": null}, {\"name\": \"test3\"}, {\"name\": \"test4\", \"value\": true}]"
+        parser = arrayOf $ objectOf $ (,) <$> "name" .: string
+                                          <*> "value" .: integer .| (-1)
+        res = parse parser test1 :: [(T.Text, Int)]
+    res `shouldBe` [("test1",1),("test2",-1),("test3",-1),("test4",-1)]
+
   it "binds correctly convenience operators 2" $ do
     let test1 = "{\"key\":[{\"key2\":13}]}"
         parser = "key" .: 0 .! "key2" .: integer
@@ -298,6 +325,18 @@ errTests = describe "Tests of previous errors" $ do
         res = parse parser test1 :: [Int]
     res `shouldBe` [2]
 
+
+  it "objectOf $ binds correctly .| at the last moment" $ do
+    let test1 = "{\"key3\":{}}"
+        parser = objectOf $ "key-none" .: "key2" .: integer .| 2
+        res = parse parser test1 :: [Int]
+    res `shouldBe` [2]
+  it "objectOf $ binds correct .| 2" $ do
+    let test1 = "{\"key3\":{\"key2\": null}}"
+        parser = objectOf $ "key-none" .: "key2" .: integer .| 2
+        res = parse parser test1 :: [Int]
+    res `shouldBe` [2]
+
   it "Parses correctly empty arrays:" $ do
     let test1 = "[]"
         parser = arrayOf $ many ("keys" .: arrayOf integer)
@@ -308,6 +347,13 @@ errTests = describe "Tests of previous errors" $ do
     let test1 = "[{\"name\":\"x\",\"key\":20}]"
         onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
         parser = arrayOf $ "key" .: integer
+        res = parseLazyByteString parser onechar :: [Int]
+    res `shouldBe` [20]
+
+  it "objectOf $ Parses correctly runs ignore parser on array:" $ do
+    let test1 = "[{\"name\":\"x\",\"key\":20}]"
+        onechar = BL.fromChunks $ map BS.singleton $ BS.unpack test1
+        parser = arrayOf $ objectOf $ "key" .: integer
         res = parseLazyByteString parser onechar :: [Int]
     res `shouldBe` [20]
 
