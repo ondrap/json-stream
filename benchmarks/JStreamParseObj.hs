@@ -38,6 +38,8 @@ instance FromJSON TestObj where
               <*> (AE..:) o "phone"
               <*> (AE..:) o "index"
 
+-- cabal run -- aeson-benchmark-fastobj 65536 2000 json-data/buffer-builder.json
+
 main :: IO ()
 main = do
   (bs:cnt:args) <- getArgs

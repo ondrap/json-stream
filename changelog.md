@@ -1,3 +1,8 @@
+# 0.4.5.2
+
+- user unsafeCoerce to existential wrapper
+- fix bad parsing with .| on object
+
 # 0.4.5.1
 
 - fixed testing suite

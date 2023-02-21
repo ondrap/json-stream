@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 -- |
 -- Module : Data.JsonStream.Parser
@@ -857,10 +858,13 @@ eitherDecodeStrict bs =
 
 --- High performance object parsing
 
+-- Helper type into which we unsafeCoerce the data
+data HValue = forall a. HValue a
+
 -- | Representation for applicative JSON one-pass object parsing
 data Object f = Object 
-  (Map.Map T.Text (Parser ())) -- ^ Field parsers
-  (Map.Map T.Text [()] -> [f]) -- ^ How to generate results from already parsed fields
+  (Map.Map T.Text (Parser HValue)) -- ^ Field parsers
+  (Map.Map T.Text [HValue] -> [f]) -- ^ How to generate results from already parsed fields
   deriving (Functor)
 
 -- | Helper function for some parser combining operators
@@ -884,7 +888,7 @@ instance Alternative Object where
 instance Semigroup (Object a) where
   (<>) = joinObjectFieldWith (<>)
 
--- We use unsafeCoerce to convert to () and back; we guarantee that there exists only
+-- We use unsafeCoerce to convert from HValue; we guarantee that there exists only
 -- one key to the map and so the original Parser will get the right type of value.
 -- This allows to drop the Typeable constraint, but the code better be OK here.
 
@@ -892,18 +896,18 @@ instance Semigroup (Object a) where
 fastObjectWithKey :: forall a. T.Text -> Parser a -> Object a
 fastObjectWithKey tname parser = Object (Map.singleton tname parseObj) mkObj
   where
-    mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
-      Just (vals :: [a]) -> reverse vals
+    mkObj dmap = case Map.lookup tname dmap of
+      Just vals -> (\(HValue a) -> unsafeCoerce a) <$> reverse vals
       Nothing -> []
-    parseObj = unsafeCoerce <$> parser
+    parseObj = HValue <$> parser
 
 fastObjectWithKeyMaybe :: forall a. T.Text -> Parser a -> Object (Maybe a)
 fastObjectWithKeyMaybe tname parser = Object (Map.singleton tname parseObj) mkObj
   where
-    mkObj dmap = case unsafeCoerce <$> Map.lookup tname dmap of
-      Just (vals :: [a]) -> Just <$> reverse vals
-      Nothing -> [Nothing]
-    parseObj = unsafeCoerce <$> parser
+    mkObj dmap = case Map.lookup tname dmap of
+      Just vals@(_:_) -> (\(HValue a) -> Just (unsafeCoerce a)) <$> reverse vals
+      _ -> [Nothing]
+    parseObj = HValue <$> parser
 
 -- | Parser for faster object parsing
 --
@@ -917,13 +921,13 @@ objectOf :: forall f. Object f -> Parser f
 objectOf (Object pmap odata) =
   unFoldI $ odata <$> foldResults (object' False parseKey)
   where
-    foldResults :: Parser (T.Text, ()) -> Parser (Map.Map T.Text [()])
+    foldResults :: Parser (T.Text, HValue) -> Parser (Map.Map T.Text [HValue])
     foldResults = foldI (\bmap (k,v) -> Map.alter (addVal v) k bmap) mempty
       where
         addVal v Nothing = Just [v]
         addVal v (Just old) = Just (v:old)
 
-    parseKey :: T.Text -> Parser (T.Text, ())
+    parseKey :: T.Text -> Parser (T.Text, HValue)
     parseKey key = case Map.lookup key pmap of
       Nothing -> ignoreVal
       Just p -> (key,) <$> p
