@@ -1,3 +1,7 @@
+# 0.4.5.3
+
+- lifted upper bounds on aeson
+
 # 0.4.5.2
 
 - user unsafeCoerce to existential wrapper
