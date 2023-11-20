@@ -14,7 +14,7 @@ main :: IO ()
 main = do
   (bs:cnt:args) <- getArgs
   let count = read cnt :: Int
-  forM_ args $ \arg -> bracket (openFile arg ReadMode) hClose $ \h -> do
+  forM_ args $ \arg -> withFile arg ReadMode $ \h -> do
     putStrLn $ arg ++ ":"
     start <- getCurrentTime
     let loop !good !bad

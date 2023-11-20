@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns, OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Exception
 import Control.Monad
@@ -7,7 +8,7 @@ import System.Environment (getArgs)
 import System.IO
 import qualified Data.ByteString as B
 import Data.JsonStream.Parser
-import Data.Aeson.Types (Value(..))
+import Data.Aeson (Value)
 
 parseWith :: IO B.ByteString -> Parser a -> B.ByteString -> IO [a]
 parseWith refill scheme inp = do
@@ -25,19 +26,18 @@ main :: IO ()
 main = do
   (bs:cnt:args) <- getArgs
   let count = read cnt :: Int
-      blkSize = read bs
-  forM_ args $ \arg -> bracket (openFile arg ReadMode) hClose $ \h -> do
+  forM_ args $ \arg -> withFile arg ReadMode $ \h -> do
     putStrLn $ arg ++ ":"
     start <- getCurrentTime
     let loop !good !bad
             | good+bad >= count = return (good, bad)
             | otherwise = do
           hSeek h AbsoluteSeek 0
-          let refill = B.hGet h blkSize
-          result <- parseWith refill (value :: Parser Value) =<< refill
-          case (result) of
-            []  -> loop good (bad+1)
-            _   -> loop (good+1) bad
+          content <- B.hGet h 4200000
+          let result = decodeStrict content
+          case result of
+            Just (_ :: Value)  -> loop (good+1) bad
+            Nothing -> loop good (bad+1)
     (good, _) <- loop 0 0
     delta <- flip diffUTCTime start `fmap` getCurrentTime
     putStrLn $ "  " ++ show good ++ " good, " ++ show delta
