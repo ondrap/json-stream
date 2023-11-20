@@ -22,12 +22,13 @@ library
   build-depends:         base >=4.7 && <5
                        , bytestring
                        , text
-                       , aeson (>=0.7)
+                       , aeson (>=2.2)
                        , vector
                        , unordered-containers
                        , scientific
                        , primitive
                        , containers
+                       , deepseq
 
   ghc-options: -O2 -Wall
   cc-options: -O2 -Wall
@@ -51,7 +52,8 @@ executable aeson-benchmark-aeson-parse
     base,
     bytestring,
     time,
-    aeson (>=0.9)
+    aeson (>=0.9),
+    deepseq
 
 executable aeson-benchmark-fastobj
   main-is: JStreamParseObj.hs
