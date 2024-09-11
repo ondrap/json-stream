@@ -218,9 +218,9 @@ parseResults TempData{tmpNumbers=tmpNumbers, tmpBuffer=bs} (err, hdr, rescount, 
                        Nothing -> TokFailed
         | resType == resString ->
           if | resAddData == -1 || resAddData == 0 -> -- One-part string without escaped characters; with escaped
-                PartialResult (StringRaw textSection (resAddData == -1) (BS.tail context)) next -- (tail - skip the last '"')
+                PartialResult (StringRaw textSection (resAddData == -1) (BS.drop 1 context)) next -- (tail - skip the last '"')
              | otherwise -> PartialResult (StringContent textSection) -- Final part of partial strings
-                            (PartialResult (StringEnd (BS.tail context)) next ) -- (tail - skip the last '"')
+                            (PartialResult (StringEnd (BS.drop 1 context)) next ) -- (tail - skip the last '"')
         | resType == resStringPartial ->
               PartialResult (StringContent textSection) next -- string section
         | otherwise -> error "Unsupported"
