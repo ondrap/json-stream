@@ -130,7 +130,6 @@ data ParseResult v =  MoreData (Parser v, BS.ByteString -> TokenResult)
                     -- The bytestring is remaining unparsed data, we need to return it somehow
                     | Yield v (ParseResult v)
 
-
 instance Functor ParseResult where
   fmap f (MoreData (np, ntok)) = MoreData (fmap f np, ntok)
   fmap _ (Failed err) = Failed err
@@ -766,7 +765,10 @@ infixr 7 .!
 data ParseOutput a = ParseYield a (ParseOutput a) -- ^ Returns a value from a parser.
                     | ParseNeedData (BS.ByteString -> ParseOutput a) -- ^ Parser needs more data to continue parsing.
                     | ParseFailed String -- ^ Parsing failed, error is reported.
-                    | ParseDone BS.ByteString -- ^ Parsing finished, unparsed data is returned.
+                    | ParseDone BS.ByteString
+                    -- ^ Parsing finished, unparsed data is returned.
+                    -- Remaining data is not returned correctly if the parser parses directly numbers/booleans/nulls; JSON should be an array/object.
+
 
 instance (Show a) => Show (ParseOutput a) where
   showsPrec d (ParseYield a next) = showParen True $ showString "ParseYield " . showsPrec d a . showString " " . showsPrec d next

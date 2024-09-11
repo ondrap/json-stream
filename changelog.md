@@ -1,3 +1,8 @@
+# 0.4.6.0
+
+- Show instance for ParseOutput
+- Correctly return remaining data for direct String parser (doesn't return correct data for direct Number/Bool/Null parser)
+
 # 0.4.5.3
 
 - lifted upper bounds on aeson

@@ -1,5 +1,5 @@
 name:                json-stream
-version:             0.4.5.3
+version:             0.4.6.0
 synopsis:            Incremental applicative JSON parser
 description:         Easy to use JSON parser fully supporting incremental parsing.
                      Parsing grammar in applicative form.
@@ -64,13 +64,15 @@ test-suite doctest
   Type:                 exitcode-stdio-1.0
   Default-Language:     Haskell2010
   HS-Source-Dirs:       test, .
-  Ghc-Options:          -threaded -Wall
   Main-Is:              doctests.hs
-  other-modules:       Data.JsonStream.CLexType
+  other-modules:         Data.JsonStream.CLexType
+                       , Data.JsonStream.Unescape
+                       , Data.JsonStream.CLexer
+                       , Data.JsonStream.Parser
+                       , Data.JsonStream.TokenParser
   c-sources:           c_lib/lexer.c, c_lib/unescape_string.c
   includes:            c_lib/lexer.h
   include-dirs:        c_lib
-  cc-options:          -fPIC
   Build-Depends:         base >= 4.11 && <5
                        , doctest >= 0.9.3
                        , bytestring
@@ -84,6 +86,7 @@ test-suite doctest
                        , directory
                        , QuickCheck
                        , quickcheck-unicode
+                       , primitive
 
 test-suite spec
   main-is:             Spec.hs
