@@ -208,7 +208,7 @@ int handle_string(const char *input, struct lexer *lexer, struct lexer_result *r
       else if (hasspecialchar)
         res->adddata = 0; // Indicate that the string contains escaped/UTF-8 characters
       else
-        res->adddata = -1; // Indicate that the stirng is clean ASCII (optimization)
+        res->adddata = -1; // Indicate that the string is clean ASCII (optimization)
 
       lexer->result_num++;
       lexer->current_state = STATE_BASE;

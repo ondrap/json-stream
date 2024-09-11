@@ -44,6 +44,15 @@ testRemaining parser startdata = loop (runParser' parser startdata)
     loop (ParseFailed err) = error err
     loop (ParseYield _ np) = loop np
 
+testRemainingChunks :: Parser a -> [BS.ByteString] -> BS.ByteString
+testRemainingChunks parser = loop (runParser parser)
+  where
+    loop (ParseNeedData _) [] = error "Not enough data."
+    loop (ParseNeedData f) (x:rest) = loop (f x) rest
+    loop (ParseDone rem1) chunks = rem1 <> BS.concat chunks
+    loop (ParseFailed err) _ = error err
+    loop (ParseYield _ np) chunks = loop np chunks
+
 
 specBase :: Spec
 specBase = describe "Basic parsing" $ do
@@ -213,6 +222,14 @@ specEdge = describe "Edge cases" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11] \"aa\""
         rem1 = testRemaining (pure "x" :: Parser String) msg1
     rem1 `shouldBe` " \"aa\""
+  it "Correctly returns unparsed data 5" $ do
+    let msg1 = "\"bb\"\"aa\""
+        rem1 = testRemaining (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` "\"aa\""
+  it "Correctly returns unparsed data 6" $ do
+    let msg1 = ["\"bb", "\"\"aa\""]
+        rem1 = testRemainingChunks (pure "x" :: Parser String) msg1
+    rem1 `shouldBe` "\"aa\""
 
   it "Handles values in interleaving order" $ do
     let msg1 = BL.fromChunks ["{\"err\":true,\"values\":[1,2,3",   "4,5,6,7]}"]

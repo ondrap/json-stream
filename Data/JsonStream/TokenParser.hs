@@ -11,12 +11,12 @@ import           Foreign.C.Types
 
 data Element = 
     ArrayBegin
-  | ArrayEnd !BS.ByteString
+  | ArrayEnd !BS.ByteString -- Rest of the source string for correct (ParseDone <rest>)
   | ObjectBegin
-  | ObjectEnd !BS.ByteString
+  | ObjectEnd !BS.ByteString -- Rest of the source string for correct (ParseDone <rest>)
   | StringContent !BS.ByteString
-  | StringRaw !BS.ByteString !Bool -- Allow raw strings to go into parser as bytestring/ isAscii
-  | StringEnd
+  | StringRaw !BS.ByteString !Bool !BS.ByteString -- Allow raw strings to go into parser as bytestring/ isAscii
+  | StringEnd !BS.ByteString
   | JValue !AE.Value
   | JInteger !CLong
   deriving (Show, Eq)
@@ -32,4 +32,4 @@ data TokenResult =  TokMoreData (BS.ByteString -> TokenResult)
 instance Show TokenResult where
   show (TokMoreData _) = "TokMoreData"
   show TokFailed = "TokFailed"
-  show (PartialResult el _) = "(PartialResult' " ++ show el ++ ")"
+  show (PartialResult el next) = "(PartialResult (" ++ show el ++ ") " ++ show next ++ ")"

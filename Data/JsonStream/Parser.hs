@@ -324,9 +324,9 @@ object' once valparse = Parser $ \tp ->
     nextitem _ _ (ObjectEnd ctx) ntok = Done ctx ntok
     nextitem yielded _ (JValue (AE.String key)) ntok =
       objcontent yielded (callParse (valparse key) ntok)
-    nextitem yielded _ (StringRaw bs True) ntok = 
+    nextitem yielded _ (StringRaw bs True _) ntok =
         objcontent yielded (callParse (valparse (unsafeDecodeASCII bs)) ntok)
-    nextitem yielded _ (StringRaw bs False) ntok = 
+    nextitem yielded _ (StringRaw bs False _) ntok =
       case unescapeText bs of
         Right t -> objcontent yielded (callParse (valparse t) ntok)
         Left e -> Failed (show e)
@@ -344,7 +344,7 @@ object' once valparse = Parser $ \tp ->
 
     getLongKey acc !len _ el ntok =
       case el of
-        StringEnd
+        StringEnd _
           | Right key <- unescapeText (BS.concat $ reverse acc) ->
               callParse (valparse key) ntok
           | otherwise -> Failed "Error decoding UTF8"
@@ -403,9 +403,9 @@ aeValue = Parser $ moreData value'
         JValue val -> Yield val (Done "" ntok)
         JInteger val -> Yield (AE.Number $ fromIntegral val) (Done "" ntok)
         StringContent _ -> callParse (AE.String <$> longString Nothing) tok
-        StringRaw bs True -> Yield (AE.String (unsafeDecodeASCII bs)) (Done "" ntok)
-        StringRaw bs False -> case unescapeText bs of
-              Right t -> Yield (AE.String t) (Done "" ntok)
+        StringRaw bs True ctx -> Yield (AE.String (unsafeDecodeASCII bs)) (Done ctx ntok)
+        StringRaw bs False ctx -> case unescapeText bs of
+              Right t -> Yield (AE.String t) (Done ctx ntok)
               Left e -> Failed (show e)
         ArrayBegin -> AE.Array . Vec.fromList <$> callParse (many (arrayOf aeValue)) tok
         ObjectBegin -> AE.Object . tomap <$> callParse (manyReverse (objectItems aeValue)) tok
@@ -444,12 +444,12 @@ longByteString mbounds = Parser $ moreData (handle id 0)
     handle acc !len tok el ntok =
       case el of
         JValue (AE.String _) -> Failed "INTERNAL ERROR! - got decoded JValue instead of string"
-        StringRaw bs _ -> Yield bs (Done "" ntok)
+        StringRaw bs _ ctx -> Yield bs (Done ctx ntok)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
           | otherwise     -> moreData (handle (acc . (str:)) (len + BS.length str)) ntok
-        StringEnd -> Yield (BS.concat (acc [])) (Done "" ntok)
+        StringEnd ctx -> Yield (BS.concat (acc [])) (Done ctx ntok)
         _ ->  callParse ignoreVal tok
 
 
@@ -472,18 +472,18 @@ longString mbounds = Parser $ moreData (handle id 0)
     handle acc !len tok el ntok =
       case el of
         JValue (AE.String str) -> Yield str (Done "" ntok)
-        StringRaw bs True -> Yield (unsafeDecodeASCII bs) (Done "" ntok)
-        StringRaw bs False -> 
+        StringRaw bs True ctx -> Yield (unsafeDecodeASCII bs) (Done ctx ntok)
+        StringRaw bs False ctx -> 
           case unescapeText bs of
-            Right t -> Yield t (Done "" ntok)
+            Right t -> Yield t (Done ctx ntok)
             Left e -> Failed (show e)
         StringContent str
           | (Just bounds) <- mbounds, len > bounds -- If the string exceeds bounds, discard it
                           -> callParse (ignoreStrRestThen (Parser $ Done "")) ntok
           | otherwise     -> moreData (handle (acc . (str:)) (len + BS.length str)) ntok
-        StringEnd
+        StringEnd ctx
           | Right val <- unescapeText (BS.concat (acc []))
-                      -> Yield val (Done "" ntok)
+                      -> Yield val (Done ctx ntok)
           | otherwise -> Failed "Error decoding UTF8"
         _ ->  callParse ignoreVal tok
 
@@ -600,7 +600,7 @@ ignoreStrRestThen next = Parser $ moreData handle
     handle _ el ntok =
       case el of
         StringContent _ -> moreData handle ntok
-        StringEnd -> callParse next ntok
+        StringEnd _ -> callParse next ntok
         _ -> Failed "Unexpected result in ignoreStrRestPlusOne"
 
 
@@ -612,13 +612,13 @@ ignoreVal' :: Int -> Parser a
 ignoreVal' stval = Parser $ moreData (handleTok stval)
   where
     handleLongString level _ (StringContent _) ntok = moreData (handleLongString level) ntok
-    handleLongString 0 _ StringEnd ntok = Done "" ntok
-    handleLongString level _ StringEnd ntok = moreData (handleTok level) ntok
+    handleLongString 0 _ (StringEnd ctx) ntok = Done ctx ntok
+    handleLongString level _ (StringEnd _) ntok = moreData (handleTok level) ntok
     handleLongString _ _ el _ = Failed $ "Unexpected element in handleLongStr: " ++ show el
 
     handleTok :: Int -> TokenResult -> Element -> TokenResult -> ParseResult a
     handleTok 0 _ (JValue _) ntok = Done "" ntok
-    handleTok 0 _ (StringRaw _ _) ntok = Done "" ntok
+    handleTok 0 _ (StringRaw _ _ ctx) ntok = Done ctx ntok
     handleTok 0 _ (JInteger _) ntok = Done "" ntok
     handleTok 0 _ (ArrayEnd _) _ = Failed "ArrayEnd in ignoreval on 0 level"
     handleTok 0 _ (ObjectEnd _) _ = Failed "ObjectEnd in ignoreval on 0 level"
@@ -629,12 +629,12 @@ ignoreVal' stval = Parser $ moreData (handleTok stval)
         JValue _ -> moreData (handleTok level) ntok
         JInteger _ -> moreData (handleTok level) ntok
         StringContent _ -> moreData (handleLongString level) ntok
-        StringRaw _ _ -> moreData (handleTok level) ntok
+        StringRaw{} -> moreData (handleTok level) ntok
         ArrayEnd _ -> moreData (handleTok (level - 1)) ntok
         ObjectEnd _ -> moreData (handleTok (level - 1)) ntok
         ArrayBegin -> moreData (handleTok (level + 1)) ntok
         ObjectBegin -> moreData (handleTok (level + 1)) ntok
-        StringEnd -> Failed "Internal error - out of order StringEnd"
+        StringEnd _ -> Failed "Internal error - out of order StringEnd"
 
 -- | Let only items matching a condition pass.
 --
@@ -767,6 +767,12 @@ data ParseOutput a = ParseYield a (ParseOutput a) -- ^ Returns a value from a pa
                     | ParseNeedData (BS.ByteString -> ParseOutput a) -- ^ Parser needs more data to continue parsing.
                     | ParseFailed String -- ^ Parsing failed, error is reported.
                     | ParseDone BS.ByteString -- ^ Parsing finished, unparsed data is returned.
+
+instance (Show a) => Show (ParseOutput a) where
+  showsPrec d (ParseYield a next) = showParen True $ showString "ParseYield " . showsPrec d a . showString " " . showsPrec d next
+  showsPrec _ (ParseNeedData _) = showString "ParseNeedData"
+  showsPrec d (ParseFailed err) = showParen True $ showString "ParseFailed " . showsPrec d err
+  showsPrec d (ParseDone rest) = showParen True $ showString "ParseDone " . showsPrec d rest
 
 -- | Run streaming parser with initial input.
 runParser' :: Parser a -> BS.ByteString -> ParseOutput a
