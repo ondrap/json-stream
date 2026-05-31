@@ -1,3 +1,7 @@
+# 0.4.6.1
+
+- Aeson 2.3
+
 # 0.4.6.0
 
 - Show instance for ParseOutput
