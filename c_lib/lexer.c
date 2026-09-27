@@ -182,21 +182,26 @@ int handle_number(const char *input, struct lexer *lexer, struct lexer_result *r
  */
 int handle_string(const char *input, struct lexer *lexer, struct lexer_result *result)
 {
-    int startposition = lexer->position;
-    char ch;
+    int position = lexer->position;
+    const int length = lexer->length;
+    int escaped = lexer->state_data_2;
+    int startposition = position;
     int hasspecialchar = 0;
 
-    for (ch=input[lexer->position]; lexer->position < lexer->length; ch = input[++lexer->position]) {
+    for (; position < length; position++) {
+      unsigned char ch = (unsigned char) input[position];
       if (ch < 32 || ch > 126)
         hasspecialchar = 1;
-      if (lexer->state_data_2)
-        lexer->state_data_2 = 0;
+      if (escaped)
+        escaped = 0;
       else if (ch == '\\') {
-        lexer->state_data_2 = 1;
+        escaped = 1;
         hasspecialchar = 1;
       } else if (ch == '"')
         break;
     }
+    lexer->position = position;
+    lexer->state_data_2 = escaped;
 
     struct lexer_result *res = &result[lexer->result_num];
     res->startpos = startposition;

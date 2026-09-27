@@ -79,24 +79,21 @@ instance Storable Header where
 resultRecSize :: Int
 resultRecSize = 4 * sizeOf (undefined :: CInt) + sizeOf (undefined :: CLong)
 
-peekResultField :: Int -> Int -> ResultPtr -> Int
-peekResultField n fieldno fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (resultRecSize * n + fieldno * isize) :: IO CInt)
-  where
-    isize = sizeOf (undefined :: CInt)
+-- | One result record (see lexer.h)
+data ResultRecord = ResultRecord !LexResultType !Int !Int !CLong
 
-peekResultAddData :: Int -> ResultPtr -> CLong
-peekResultAddData n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr ->
-    fromIntegral <$> (peekByteOff ptr (resultRecSize * n + 4 * isize) :: IO CLong)
+-- | Read result record n
+peekResult :: Int -> ResultPtr -> ResultRecord
+peekResult n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
+  withForeignPtr (unresPtr fptr) $ \ptr -> do
+    restype <- peekByteOff ptr base
+    startpos <- peekByteOff ptr (base + isize) :: IO CInt
+    len <- peekByteOff ptr (base + 2 * isize) :: IO CInt
+    adddata <- peekByteOff ptr (base + 4 * isize)
+    return $! ResultRecord (LexResultType restype) (fromIntegral startpos) (fromIntegral len) adddata
   where
+    base = resultRecSize * n
     isize = sizeOf (undefined :: CInt)
-
-peekResultType :: Int -> ResultPtr -> LexResultType
-peekResultType n fptr = inlinePerformIO $ -- !! Using inlinePerformIO should be safe - we are just reading bytes from memory
-  withForeignPtr (unresPtr fptr) $ \ptr ->
-    LexResultType <$> peekByteOff ptr (resultRecSize * n)
 
 foreign import ccall unsafe "lex_json" lexJson :: Ptr CChar -> Ptr Header -> Ptr () -> IO CInt
 
@@ -180,10 +177,8 @@ parseResults TempData{tmpNumbers=tmpNumbers, tmpBuffer=bs} (err, hdr, rescount, 
     parse n
       | n >= rescount = getNextResult (newtemp tmpNumbers)
       | otherwise =
-      let resType = peekResultType n resptr
-          resStartPos = peekResultField n 1 resptr
-          resLength = peekResultField n 2 resptr
-          resAddData = peekResultAddData n resptr
+      -- Strict, so that no lazy field keeps the result buffer alive
+      let !(ResultRecord resType resStartPos resLength resAddData) = peekResult n resptr
           next = parse (n + 1)
           context = BS.drop (resStartPos + resLength) bs
           textSection = substr resStartPos resLength bs

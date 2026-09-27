@@ -193,6 +193,13 @@ specEdge = describe "Edge cases" $ do
     res `shouldBe` ["Žluťoučký kůň"]
 
 
+  it "Parses escaped strings split at every offset" $ do
+    let msg1 = "[\"a\\\\\",\"b\\\"c\\\\\\\"d\",\"\\u00e9\"]"
+    forM_ [0 .. BS.length msg1] $ \i -> do
+      let (a, b) = BS.splitAt i msg1
+          res = parseLazyByteString (arrayOf string) (BL.fromChunks [a, b]) :: [T.Text]
+      res `shouldBe` ["a\\", "b\"c\\\"d", "\233"]
+
   it "Correctly skips data" $ do
     let msg1 = "[{\"123\":[1,2,[3,4]]},11]"
         res = parseByteString (arrayWithIndexOf 0 (objectValues (arrayOf $ pure "x")) <> arrayWithIndexOf 1 (pure "y") <> arrayOf (pure "z")) msg1 :: [String]
